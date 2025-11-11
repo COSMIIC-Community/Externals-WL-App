@@ -26,7 +26,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 //WIRELESS LINK
 #define WL_ENTER_DFU_MODE           (0x21) //  Not yet implemented.  Hold button1 during reset to enter serial recovery
-#define WL_ERASE_BONDS              (0x22) //  Not yet implemented.  Does not have bonding yet
+#define WL_ERASE_BONDS              (0x22) //    0         1         returns erasebonds result
 #define WL_RESET                    (0x23) //    0         0            Reset WL
 #define WL_START_PAIRING            (0x1F)
 #define WL_GET_PASSKEY              (0x1E)
