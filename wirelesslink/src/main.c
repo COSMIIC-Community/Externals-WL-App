@@ -1369,7 +1369,7 @@ void implant_reqresp_thread(void)
 		sendRadioPacket(bufPtr, medRadio.len);  
 		medRadio.len = 0;
 		/* Wait (not indefinitely) for message to be sent to implant*/
-		err = k_sem_take(&medradio_sent, K_MSEC(timeout));
+		err = k_sem_take(&medradio_sent, K_MSEC(timeout)); //JML should this be a shorter timeout
 		if (err == 0)
 		{
 			/* Wait (not indefinitely) for response from implant*/

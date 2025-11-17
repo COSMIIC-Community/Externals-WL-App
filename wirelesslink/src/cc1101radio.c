@@ -473,15 +473,16 @@ void isr_offload_function(struct k_work *work_tem)
 		struct medRadio_type medRadio;
 		medRadio.len = getRadioPacket(&medRadio.buf);
 		
-		
-
-		while(k_msgq_put(&imp_resp_msgq, &medRadio, K_NO_WAIT) != 0)
+		if (medRadio.len)
 		{
-			/* message queue is full: purge old data & try again */
-			LOG_INF("Purging ImpResp msg_q");
-            k_msgq_purge(&imp_resp_msgq);
-		}
-		LOG_INF("ImplantResponse k_msg_q_put complete");
+			while(k_msgq_put(&imp_resp_msgq, &medRadio, K_NO_WAIT) != 0)
+			{
+				/* message queue is full: purge old data & try again */
+				LOG_INF("Purging ImpResp msg_q");
+				k_msgq_purge(&imp_resp_msgq);
+			}
+			LOG_INF("ImplantResponse k_msg_q_put complete");
+		}	
 
 
 	}
@@ -960,12 +961,16 @@ uint8_t getRadioPacket( uint8_t *data )
 			radio.newSession = false;
 		}
 		LOG_HEXDUMP_INF(data, len, "Received Valid MedRadio Packet");
+
+		idleMedRadio();
 	}
 	else
 	{
 		LOG_INF("Received Errant MedRadio Packet, length: %d", len);
+		len = 0;
+		//stay in RX Mode
 	}
-	idleMedRadio();
+	
     return len;	
 }
 

@@ -156,6 +156,7 @@ uint8_t image[512];
 
 #define DISP_STR_LEN 80
 
+void purge_msg_queues(void);
 
 
 void command_handler_thread(void)
@@ -320,6 +321,7 @@ void command_handler_thread(void)
                 break;
 
             case WL_PMBOOT_WRITE:
+                LOG_INF("PM BOOT WRITE");
                 if(cmd_payload_len == 7  ) //4 addr bytes + 2 pgsize bytes + 1 sector byte
                 {   
                     pmboot_write_supervisor(&cmdhandler.buf[INDEX_CMD_PAYLOAD], NULL, 0, &medRadio.buf[0], &medRadio.len);
@@ -1095,12 +1097,7 @@ void command_handler_thread(void)
             break;
 
             case PURGE_MSG_QUEUES:
-                k_msgq_purge(&imp_req_msgq);
-                k_msgq_purge(&imp_resp_msgq);
-                k_msgq_purge(&cmd_req_msgq);
-                k_msgq_purge(&cmd_resp_msgq);
-                k_msgq_purge(&coil_req_msgq);
-                k_msgq_purge(&coil_resp_msgq);
+                purge_msg_queues();
                 break;
 
             case TEST_READ_SDO:
@@ -1116,15 +1113,10 @@ void command_handler_thread(void)
                 break;
         }
 
-        if (response_len > AWAITING_RESPONSE) //already have a response
-        {
-            response[INDEX_RESP_SYNC] = SYNC_BYTE;
-            response[INDEX_RESP_TYPE] = response_type;
-            response[INDEX_RESP_LEN] = response_len;
-            LOG_HEXDUMP_INF(response, response_len, "Response");
 
-        }
-        else if (response_len == AWAITING_RESPONSE)
+
+
+        while(response_len == AWAITING_RESPONSE)
         {
             if(medRadio.len > 0) //we have an implant request to send
             {
@@ -1146,7 +1138,7 @@ void command_handler_thread(void)
                 //scrap CRC/LQI bytes and the nonpayload bytes  
                 if (cmdhandler.len < NON_PAYLOAD_RESP_BYTES + 2)
                 {
-                   len = 0;  
+                    len = 0;  
                 }
                 else
                 {
@@ -1168,8 +1160,11 @@ void command_handler_thread(void)
 
 
                 if(err == 0 || err == 0xFF){ //local task completed either with sucess or failed retry attempts
+                    LOG_INF("Done with local process %02X", err);
+
                     response_type = RESP_SUCCESS;
                     response_len = NON_PAYLOAD_RESP_BYTES + 1;
+                    
                     if(err){
                         response[INDEX_RESP_PAYLOAD] = 0; //fail
                     }
@@ -1178,29 +1173,26 @@ void command_handler_thread(void)
                     }
                     //message will be sent on USB/UART or BLE below
                 }
-                else //send out new implant request
-                {
-                    medRadio.source = SOURCE_CMDHANDLER;
-                    while(k_msgq_put(&imp_req_msgq, &medRadio, K_NO_WAIT) != 0)
-                    {
-                        /* message queue is full: purge old data & try again */
-                        LOG_INF("Purging MsgQ");
-                        k_msgq_purge(&imp_req_msgq);
-                    }
-                }
+                // otherwise go back to begining of loop and send out next implant request
+
             }
             else
             {
                 memcpy(&response[0], &cmdhandler.buf[0], cmdhandler.len);  //copy msg to response
+                response_type = RESP_SUCCESS;
                 response_len = cmdhandler.len;
             }
 
-           
+        } 
 
-        }
-
-        if (response_len > 0)
+        if (response_len > AWAITING_RESPONSE)
         {
+            response[INDEX_RESP_SYNC] = SYNC_BYTE;
+            response[INDEX_RESP_TYPE] = response_type;
+            response[INDEX_RESP_LEN] = response_len;
+
+            LOG_HEXDUMP_INF(response, response_len, "Response to Host:");
+
             switch(route)
             {
                 case ROUTE_UART:
@@ -1515,4 +1507,13 @@ void resetWL(void){
     k_msleep(1); // Wait for at least one microsecond
     NRF_RESET->NETWORK.FORCEOFF = (RESET_NETWORK_FORCEOFF_FORCEOFF_Release << RESET_NETWORK_FORCEOFF_FORCEOFF_Pos);
     *(volatile uint32_t *) 0x40005618ul = 0ul;
+}
+
+void purge_msg_queues(void){
+    k_msgq_purge(&imp_req_msgq);
+    k_msgq_purge(&imp_resp_msgq);
+    k_msgq_purge(&cmd_req_msgq);
+    k_msgq_purge(&cmd_resp_msgq);
+    k_msgq_purge(&coil_req_msgq);
+    k_msgq_purge(&coil_resp_msgq);
 }
