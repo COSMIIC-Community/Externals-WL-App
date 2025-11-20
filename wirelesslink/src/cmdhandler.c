@@ -310,7 +310,7 @@ void command_handler_thread(void)
                     if (addr + len <= sizeof(image) && len <= sizeof(response)-NON_PAYLOAD_RESP_BYTES)
                     {
                         response_len = NON_PAYLOAD_RESP_BYTES + len;
-                        response_type = RESP_INVALID_PARAMETERS;
+                        response_type = RESP_SUCCESS;
                         memcpy(&response[INDEX_RESP_PAYLOAD], &image[addr], len);
                         break;
                     }
@@ -1261,6 +1261,13 @@ uint8_t pmboot_write_supervisor(uint8_t *pmboot, uint8_t * resp, uint8_t resp_le
                 pkt++;
                 errcnt = 0 ;
             }
+            else if(pkt == (PM_PAGE_SIZE-PMBOOT_FIRST_PKT_BYTES)/PMBOOT_PKT_BYTES + 1 && resp_len == 2 && resp[0] == 0x21 && resp[1] == 0)
+            {
+                //failed to write image, need to start back at begininning of image
+                LOG_INF("pmboot_write_supervisor: PM failed to write image on last packet, restarting image");
+                pkt = 1;
+                errcnt++; //JML Note: could have infinite loop here where last packet always fails but other packets restore errcnt to 0.  Add second error counter?
+            }
             else{
                 LOG_INF("Other PMBOOT pkt %d", pkt);
                 LOG_HEXDUMP_INF(resp, resp_len, " ");
@@ -1281,7 +1288,7 @@ uint8_t pmboot_write_supervisor(uint8_t *pmboot, uint8_t * resp, uint8_t resp_le
 
     LOG_INF("PMBOOT write pkt# %d, err# %d following receive", pkt, errcnt);
     
-    if((PMBOOT_FIRST_PKT_BYTES + (pkt-1)*PMBOOT_PKT_BYTES) > PM_PAGE_SIZE){
+    if((PMBOOT_FIRST_PKT_BYTES + (pkt-2)*PMBOOT_PKT_BYTES) >= PM_PAGE_SIZE){ 
         pkt = 0; //done
         *req_len = 0;
     }
@@ -1332,6 +1339,7 @@ uint8_t pmboot_read_supervisor(uint8_t *pmboot, uint8_t * resp, uint8_t resp_len
             {
                 if(image_addr + resp_len-1 <= PM_PAGE_SIZE)
                 {
+                    LOG_INF("Good Read PMBOOT pkt %d addr%d resp_len %d", pkt, image_addr, resp_len);
                     //JML TODO?:  resp_len-1 should be PMBOOT_PKT_BYTES or PMBOOT_FIRST_PKT_BYTES
                     memcpy(&image[image_addr], &resp[1], resp_len-1);
                     image_addr+=resp_len-1;
@@ -1364,7 +1372,8 @@ uint8_t pmboot_read_supervisor(uint8_t *pmboot, uint8_t * resp, uint8_t resp_len
     }
 
      LOG_INF("PMBOOT read pkt# %d, err# %d following receive", pkt, errcnt);
-    if((PMBOOT_FIRST_PKT_BYTES + (pkt-1)*PMBOOT_PKT_BYTES) > PM_PAGE_SIZE){
+     
+    if((PMBOOT_FIRST_PKT_BYTES + (pkt-2)*PMBOOT_PKT_BYTES) >= PM_PAGE_SIZE){
         pkt = 0; //done
         *req_len = 0;
     }

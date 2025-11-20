@@ -1654,14 +1654,14 @@ void setChargerParams(uint8_t* params)
 #define COIL_MAX_TEMP	440
 
 #define PM_OPEN_TEMP	100
-#define PM_GOOD_TEMP	375
-#define PM_WARN_TEMP    390
+#define PM_GOOD_TEMP	370
+#define PM_WARN_TEMP    380
 #define PM_MAX_TEMP		400
 
-#define TIME_MIN_TARGET_CHANGE 5
+#define TIME_MIN_TARGET_CHANGE 5 //in s
 #define TARGET_INCREMENT 5
 #define TARGET_MAX      100
-#define TARGET_MIN      50
+#define TARGET_MIN      20
 
 #define TIME_OUT_RADIO     30 //in s
 #define TIME_OUT_COUPLING  120 //in s
