@@ -164,6 +164,47 @@ static bool isAdvertising = false;
 static bool isReady = false;
 static uint8_t bond_addr_list[CONFIG_BT_MAX_PAIRED][BT_ADDR_SIZE] = {0};
 
+
+//See BT Fundamental Lesson 2, Ex 3
+static void exchange_func(struct bt_conn *conn, uint8_t att_err, struct bt_gatt_exchange_params *params);
+
+static void update_data_length(struct bt_conn *conn)
+{
+    int err;
+    struct bt_conn_le_data_len_param my_data_len = {
+        .tx_max_len = BT_GAP_DATA_LEN_MAX,
+        .tx_max_time = BT_GAP_DATA_TIME_MAX,
+    };
+    err = bt_conn_le_data_len_update(conn, &my_data_len);
+    if (err) {
+        LOG_ERR("data_len_update failed (err %d)", err);
+    }
+}
+
+static struct bt_gatt_exchange_params exchange_params;
+
+static void update_mtu(struct bt_conn *conn)
+{
+    int err;
+    exchange_params.func = exchange_func;
+
+    err = bt_gatt_exchange_mtu(conn, &exchange_params);
+    if (err) {
+        LOG_ERR("bt_gatt_exchange_mtu failed (err %d)", err);
+    }
+}
+
+static void exchange_func(struct bt_conn *conn, uint8_t att_err,
+			  struct bt_gatt_exchange_params *params)
+{
+	LOG_INF("MTU exchange %s", att_err == 0 ? "successful" : "failed");
+    if (!att_err) {
+        uint16_t payload_mtu = bt_gatt_get_mtu(conn) - 3;   // 3 bytes used for Attribute headers.
+        LOG_INF("New MTU: %d bytes", payload_mtu);
+    }
+}
+
+
 //See BT Fundamentals Lesson 5, Ex 1
 uint8_t erasebonds(void)
 {
@@ -304,7 +345,10 @@ uint8_t get_bonded_devices(uint8_t *buf)
 
 	num_bonds = setup_accept_list(BT_ID_DEFAULT);
 
-	memcpy(buf, bond_addr_list, sizeof(bond_addr_list));
+	if(buf != NULL)
+	{
+		memcpy(buf, bond_addr_list, sizeof(bond_addr_list));
+	}
 	return (uint8_t) num_bonds;
 }
 
@@ -745,6 +789,19 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		isReady = true;
 	#endif
 
+	//Connection info (code from BLE fundamentals Lesson 3, Ex 2)
+	struct bt_conn_info info;
+	err = bt_conn_get_info(conn, &info);
+	if (err) {
+		LOG_ERR("bt_conn_get_info() returned %d", err);
+		return;
+	}
+	LOG_INF("Connection parameters: raw interval(x1.25ms) %d, latency %d intervals, rawtimeout(x10ms) %d", info.le.interval, info.le.latency, info.le.timeout);
+
+	k_sleep(K_MSEC(1000));  // Delay added to avoid link layer collisions.
+	update_data_length(conn);
+	update_mtu(conn);
+
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason)
@@ -758,6 +815,12 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 	isReady = false;
 	ble_start_advertising();
 
+}
+
+//code from BLE Fundamentals Lesson 3, Ex 2
+void on_le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency, uint16_t timeout)
+{
+    LOG_INF("Connection parameters updated: raw interval(x1.25ms) %d, latency %d intervals, raw timeout(x10ms) %d", interval, latency, timeout);
 }
 
 #ifdef CONFIG_BT_NUS_SECURITY_ENABLED
@@ -785,12 +848,24 @@ static void on_security_changed(struct bt_conn *conn, bt_security_t level,
 }
 #endif
 
+void on_le_data_len_updated(struct bt_conn *conn, struct bt_conn_le_data_len_info *info)
+{
+    uint16_t tx_len     = info->tx_max_len; 
+    uint16_t tx_time    = info->tx_max_time;
+    uint16_t rx_len     = info->rx_max_len;
+    uint16_t rx_time    = info->rx_max_time;
+    LOG_INF("Data length updated. Length %d/%d bytes, time %d/%d us", tx_len, rx_len, tx_time, rx_time);
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected    = on_connected,
 	.disconnected = on_disconnected,
 #ifdef CONFIG_BT_NUS_SECURITY_ENABLED
 	.security_changed = on_security_changed,
 #endif
+	//code from BLE Fundamentals Lesson 3, Ex 2
+	.le_param_updated = on_le_param_updated,
+	.le_data_len_updated = on_le_data_len_updated,
 };
 
 #ifdef CONFIG_BT_NUS_SECURITY_ENABLED
@@ -810,6 +885,9 @@ static void auth_passkey_display(struct bt_conn *conn, unsigned int passkey)
 
 	LOG_INF("Display Passkey %s: %06u", addr, passkey);
 	pairing_passkey = passkey;
+	#if WL_IN_CHARGER
+		displayPairingKey();
+	#endif
 }
 
 

@@ -37,7 +37,7 @@ struct smartCoil_type {
 
 
 void OutputDisplay(bool clear, char* str1, char* str2, char* str3, char* str4, uint8_t len1, uint8_t len2, uint8_t len3, uint8_t len4);
-void OutputDisplayLine(uint8_t line, char* str, uint8_t len);
+bool OutputDisplayLine(uint8_t line, char* str, uint8_t len);
 void readRTC(uint8_t* rtc);
 void writeRTC(uint8_t* rtc);
 
@@ -82,7 +82,7 @@ int8_t transmit(uint8_t node, uint8_t* data, uint8_t len, uint8_t counter, uint8
 uint8_t getChargerParams(uint8_t* settings);
 void setChargerParams(uint8_t* settings);
 uint8_t getAppRadioFromPMBoot(uint8_t* addrAP, uint8_t* addrPM, uint8_t* chan, uint8_t* power);
-
+void displayPairingKey(void);
 
 #endif
 

@@ -229,42 +229,42 @@ static struct
 *************/
 
 struct CcInit ccInitTable[] = {
-	IOCFG2,   0x06,  //0x08 asserts when PQT reached //0x29,  //gdo2 output pin configuration; ChipRdy.
-	IOCFG0,   0x06,  //gdo0 output pin configuration. high on startof_tx/rx; low on end-of-packet.
-	FIFOTHR,  0x07,  //rxfifo and txfifo thresholds. use 0x47 if MDMCFG4 is not 0x5B
-	PKTLEN,   0x3F,	 //max packet length byte value 
-	PKTCTRL1, 0x0D,  //packet automation control. -- enable autoflush_CRC; append status; 
-	PKTCTRL0, 0x05,  //packet automation control. -- CRC enabled (bit 2);
-	ADDR,    RADIO_ADDR,  //device address.
-	CHANNR,  RADIO_CHAN,  //channel number.
-	FSCTRL1,  0x08,  //frequency synthesizer control.
-	FSCTRL0,  0x00,  //frequency synthesizer control.
-	FREQ2,    0x0f,  //frequency control word, high byte.
-	FREQ1,    0x77,  //frequency control word, middle byte.
-	FREQ0,    0xa2,  //frequency control word, low byte.
-	MDMCFG4,  0x5b,  //modem configuration. 0x8b works too and reduces off-band effects
-	MDMCFG3,  0xf8,  //modem configuration.
-	MDMCFG2,  0x13,  //modem configuration.
-	MDMCFG1,  0x23,  //modem configuration.
-	MDMCFG0,  0x7a,  //modem configuration.
-	DEVIATN,  0x47,  //modem deviation setting (when fsk modulation is enabled).
-  MCSM0,    0x18,  //main radio control state machine configuration.
-	FOCCFG,   0x1D,  //frequency offset compensation configuration.
-	BSCFG,    0x1C,  //bit synchronization configuration.
-	AGCCTRL2, 0xC7,  //agc control.
-	AGCCTRL1, 0x00,  //agc control.
-	AGCCTRL0, 0xB2,  //agc control.
-	WORCTRL,  0xfb,	 //not using WOR
-	FREND1,   0xB6,  //front end rx configuration.
-	FREND0,   0x10,  //front end tx configuration.
-	FSCAL3,   0xEA,  //frequency synthesizer calibration.
-	FSCAL2,   0x2A,  //frequency synthesizer calibration.
-	FSCAL1,   0x00,  //frequency synthesizer calibration.
-	FSCAL0,   0x1F,  //frequency synthesizer calibration.
-	FSTEST,   0x59,  //frequency synthesizer calibration.
-	TEST2,    0x88,  //various test settings.
-	TEST1,    0x31,  //various test settings.
-	TEST0,    0x0b   //various test settings.
+	{IOCFG2,   0x06},  //0x08 asserts when PQT reached //0x29,  //gdo2 output pin configuration; ChipRdy.
+	{IOCFG0,   0x06},  //gdo0 output pin configuration. high on startof_tx/rx; low on end-of-packet.
+	{FIFOTHR,  0x07},  //rxfifo and txfifo thresholds. use 0x47 if MDMCFG4 is not 0x5B
+	{PKTLEN,   0x3F},	 //max packet length byte value 
+	{PKTCTRL1, 0x0D},  //packet automation control. -- enable autoflush_CRC; append status; 
+	{PKTCTRL0, 0x05},  //packet automation control. -- CRC enabled (bit 2);
+	{ADDR,    RADIO_ADDR},  //device address.
+	{CHANNR,  RADIO_CHAN},  //channel number.
+	{FSCTRL1,  0x08},  //frequency synthesizer control.
+	{FSCTRL0,  0x00},  //frequency synthesizer control.
+	{FREQ2,    0x0f},  //frequency control word, high byte.
+	{FREQ1,    0x77},  //frequency control word, middle byte.
+	{FREQ0,    0xa2},  //frequency control word, low byte.
+	{MDMCFG4,  0x5b},  //modem configuration. 0x8b works too and reduces off-band effects
+	{MDMCFG3,  0xf8},  //modem configuration.
+	{MDMCFG2,  0x13},  //modem configuration.
+	{MDMCFG1,  0x23},  //modem configuration.
+	{MDMCFG0,  0x7a},  //modem configuration.
+	{DEVIATN,  0x47},  //modem deviation setting (when fsk modulation is enabled).
+	{MCSM0,    0x18},  //main radio control state machine configuration.
+	{FOCCFG,   0x1D},  //frequency offset compensation configuration.
+	{BSCFG,    0x1C},  //bit synchronization configuration.
+	{AGCCTRL2, 0xC7},  //agc control.
+	{AGCCTRL1, 0x00},  //agc control.
+	{AGCCTRL0, 0xB2},  //agc control.
+	{WORCTRL,  0xfb},	 //not using WOR
+	{FREND1,   0xB6},  //front end rx configuration.
+	{FREND0,   0x10},  //front end tx configuration.
+	{FSCAL3,   0xEA},  //frequency synthesizer calibration.
+	{FSCAL2,   0x2A},  //frequency synthesizer calibration.
+	{FSCAL1,   0x00},  //frequency synthesizer calibration.
+	{FSCAL0,   0x1F},  //frequency synthesizer calibration.
+	{FSTEST,   0x59},  //frequency synthesizer calibration.
+	{TEST2,    0x88},  //various test settings.
+	{TEST1,    0x31},  //various test settings.
+	{TEST0,    0x0b}   //various test settings.
 		
 };
 

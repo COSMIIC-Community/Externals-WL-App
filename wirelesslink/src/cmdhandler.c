@@ -36,8 +36,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define WL_GET_BONDS                (0x1D) //    0         31          Returns number of existing bonds from 0-5, and the 6-byte addresses of up to 5 paired devices
 //These commands allow accelerating long flash read/write commands with PM
 //WL Image is currently only 512 bytes 
-#define WL_WRITE_IMAGE              (0x24) //    4+N       0           Send 4 Address Bytes followed by N (up to 248) bytes to write to WL image
-#define WL_READ_IMAGE               (0x25) //    5         N           Send 4 Address Bytes and N (up to 252).  Returns N bytes of WL inage starting from addr 
+#define WL_WRITE_IMAGE              (0x24) //    4+N       0           Send 4 Address Bytes followed by N (up to 248 for USB, 237 for BLE ) bytes to write to WL image
+#define WL_READ_IMAGE               (0x25) //    5         N           Send 4 Address Bytes and N (up to 252 for USB, 241 for BLE).  Returns N bytes of WL inage starting from addr 
 #define WL_PMBOOT_WRITE             (0x26) //    7         0           Send 4 addr bytes + 2 pgsize bytes + 1 sector byte.  Copies WL image to PM flash
 #define WL_PMBOOT_READ              (0x27) //    6         0           Send 4 addr bytes + 2 size bytes.  Copies PM flash to WL image
 #define WL_PMFILE_READ              (0x28) //    7         0           Send 4 addr bytes + 2 size bytes + 1 file byte.  Copies PM file data to WL image

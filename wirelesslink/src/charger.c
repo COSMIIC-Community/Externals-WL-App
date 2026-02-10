@@ -850,14 +850,14 @@ void OutputDisplay(bool clear, char* str1, char* str2, char* str3, char* str4, u
 
 //This function may be called from different tasks and we want to guarantee mutual exclusion
 //SHould this use a mutex instead of iSbuSy variable?
-void OutputDisplayLine(uint8_t line, char* str, uint8_t len)
+bool OutputDisplayLine(uint8_t line, char* str, uint8_t len)
 {
 	static bool isBusy = false;
 
 	if(isBusy)
 	{
 		LOG_INF("Display busy");
-		return;
+		return false;
 	}
 
 	isBusy = true;
@@ -885,6 +885,7 @@ void OutputDisplayLine(uint8_t line, char* str, uint8_t len)
 	}
 
 	isBusy = false;
+	return true;
 
 }
 
@@ -1037,7 +1038,8 @@ void initDisplay(void)
 #define CHARGER_MODE_DETECT	4
 #define CHARGER_MODE_POWERDOWN	5
 #define CHARGER_MODE_CHARGE_NOFEEDBACK	6
-#define CHARGER_MODE_MAX    CHARGER_MODE_CHARGE_NOFEEDBACK
+#define CHARGER_MODE_DISPLAY_BLE	7
+#define CHARGER_MODE_MAX    7
 #define CHARGER_MODE_DEFAULT CHARGER_MODE_CLOCK
 
 static uint8_t chargerMode = CHARGER_MODE_DEFAULT; //Only the setChargeMode function should set this variable
@@ -1169,7 +1171,17 @@ void charger_thread(void)
 		}
 		else if(chargerMode == CHARGER_MODE_TUNE)
 		{
-			tuneCoil();
+			setChargeMode(CHARGER_MODE_NONE);
+			OutputDisplay(1, "","     TUNE COIL?     ","  Long Press again  ","     to confirm     ",0,20,20,0 );
+			cnt = 0;
+			while(chargerMode == CHARGER_MODE_NONE && cnt++ < 5)
+			{
+				k_msleep(1000);
+			}
+			if (chargerMode == CHARGER_MODE_TUNE)
+			{
+				tuneCoil();
+			}
 			setChargeMode(CHARGER_MODE_DEFAULT);
 		}
 		else if (chargerMode == CHARGER_MODE_POWERDOWN)
@@ -1185,6 +1197,14 @@ void charger_thread(void)
 			{
 				powerDownPM();
 			}
+			setChargeMode(CHARGER_MODE_DEFAULT);
+		}
+		else if (chargerMode == CHARGER_MODE_DISPLAY_BLE)
+		{
+			sprintf(str, "(#%1d) passkey:%06d ", get_bonded_devices(NULL)+1, getpasskey());		
+			OutputDisplayLine(4,str,20);
+
+			k_msleep(10000);
 			setChargeMode(CHARGER_MODE_DEFAULT);
 		}
 		else
@@ -1430,7 +1450,7 @@ void tuneCoil(void)
 	k_msleep(200);
 	period = 1000000000/freq; //in ns
 	setCoilPeriod(period);
-	while(freq < max_freq)
+	while(freq <= max_freq)
 	{
 		if(chargerMode != CHARGER_MODE_TUNE)
 		{
@@ -1465,30 +1485,44 @@ void tuneCoil(void)
 		
 
 	}
-	n = sprintf(str, " %4d Hz  %4d mA ", opt_freq, max_current);
 	
-	OutputDisplay(1, " Optimal Coil Freq: ", str,"","",20,n,0,0 );
-	if (opt_freq != chargerParams.optimalfreq || max_current != chargerParams.maxcurrent)
+	if(freq > max_freq)
 	{
-		chargerParams.optimalfreq = opt_freq;
-		chargerParams.maxcurrent = max_current;
-		chargerParams.mincurrent = max_current; //reset min current value
-		saved_settings_write(COIL_SETTINGS_ID, &chargerParams, sizeof(chargerParams));
-	}
+		n = sprintf(str, " %4d Hz  %4d mA ", opt_freq, max_current);
+		
+		OutputDisplay(1, " Optimal Coil Freq: ", str,"","",20,n,0,0 );
+		if (opt_freq != chargerParams.optimalfreq || max_current != chargerParams.maxcurrent)
+		{
+			chargerParams.optimalfreq = opt_freq;
+			chargerParams.maxcurrent = max_current;
+			chargerParams.mincurrent = max_current; //reset min current value
+			saved_settings_write(COIL_SETTINGS_ID, &chargerParams, sizeof(chargerParams));
+			OutputDisplay(1, " Optimal Coil Freq: ", str,"","",20,n,0,0 );
+		}
 
-	if(opt_period > 0)
+		if(opt_period > 0)
+		{
+			setCoilPeriod(opt_period);
+		}
+		if(modeLED & LED_CHARGER) setLEDs(2,0,2);
+		stopDCDC();
+		stopCoilDrive();
+
+		//pause on current screen.  Leave error screen until charging mode is changed
+		do {
+			k_msleep(1000);
+		} while(chargerMode == CHARGER_MODE_TUNE); 
+	}
+	else
 	{
-		setCoilPeriod(opt_period);
-	}
-	if(modeLED & LED_CHARGER) setLEDs(2,0,2);
-	stopDCDC();
-	stopCoilDrive();
-
-	//pause on current screen.  Leave error screen until charging mode is changed
-	do {
+		//quit early
+		n = sprintf(str, " Coil Freq: %4d Hz ", chargerParams.optimalfreq);
+		OutputDisplay(1, "    Quit Tuning     ", " No changes applied ",str,"",20,20,n,0 );
+		if(modeLED & LED_CHARGER) setLEDs(2,0,2);
+		stopDCDC();
+		stopCoilDrive();
 		k_msleep(1000);
-	} while(chargerMode == CHARGER_MODE_TUNE); 
-
+	}
 }
 
 
@@ -2523,6 +2557,7 @@ void charge(void)
 		}
 
 		delayCycle = (uint16_t) (k_uptime_get() - timeCycle);
+		LOG_INF("DelayCycle: %dms", delayCycle);
 		if(delayCycle < TIME_CYLCE_LED_ON)
 		{
 			k_msleep(TIME_CYLCE_LED_ON - delayCycle);
@@ -2930,4 +2965,9 @@ int8_t transmit(uint8_t node, uint8_t* data, uint8_t len, uint8_t counter, uint8
 
 	return medRadioRespLength-DATA_INDEX;
 
+}
+
+void displayPairingKey(void)
+{
+	setChargeMode(CHARGER_MODE_DISPLAY_BLE);
 }
