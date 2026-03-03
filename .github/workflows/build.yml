@@ -1,0 +1,120 @@
+name: Build Wireless Link Firmware
+
+on:
+  push:
+    branches: [ ci-workflow ]
+  pull_request:
+    branches: [ ci-workflow ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    env:
+      NRF_CONNECT_SDK_VERSION: v3.1.1
+      ZEPHYR_BASE: ${{ github.workspace }}/ncs/zephyr
+      WEST_MANIFEST_DIR: ${{ github.workspace }}/ncs
+      TOOLCHAIN_PATH: ${{ github.workspace }}/ncs/toolchain
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache nRF Connect SDK
+        id: sdk-cache
+        uses: actions/cache@v3
+        with:
+          path: ncs
+          key: nrf-connect-sdk-${{ env.NRF_CONNECT_SDK_VERSION }}-${{ runner.os }}
+          restore-keys: |
+            nrf-connect-sdk-${{ env.NRF_CONNECT_SDK_VERSION }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            gperf \
+            ccache \
+            dfu-util \
+            device-tree-compiler \
+            libusb-1.0-0-dev
+
+      - name: Install nRF Connect SDK (if not cached)
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ncs
+          cd ncs
+          pip install --upgrade pip
+          pip install west
+          west init -m https://github.com/nrfconnect/sdk-nrf.git --mr $NRF_CONNECT_SDK_VERSION
+          west update -o=--depth=1 -n
+          pip install -r zephyr/scripts/requirements.txt
+          pip install -r nrf/scripts/requirements.txt
+          pip install -r bootloader/mcuboot/scripts/requirements.txt
+
+      - name: Install nRF Connect SDK dependencies
+        run: |
+          cd ncs
+          pip install --upgrade pip
+          pip install -r zephyr/scripts/requirements.txt
+          pip install -r nrf/scripts/requirements.txt
+          pip install -r bootloader/mcuboot/scripts/requirements.txt
+
+      - name: Setup build environment
+        run: |
+          cd ${{ github.workspace }}/ncs
+          source zephyr/zephyr-env.sh
+
+      - name: Build firmware
+        run: |
+          cd ${{ github.workspace }}/wirelesslink
+          source ${{ github.workspace }}/ncs/zephyr/zephyr-env.sh
+          west build -b cosmiic_wireless_link/nrf5340/cpuapp --strict
+
+      - name: Generate DFU package
+        if: success()
+        run: |
+          cd ${{ github.workspace }}/wirelesslink/build
+          # Create a DFU package for the application
+          python3 ${{ github.workspace }}/ncs/nrf/scripts/bootloader/generate_dfu_zip.py \
+            --application app_update.bin \
+            --output-directory . \
+            --application-version-number 1 || true
+          
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: firmware-build
+          path: |
+            wirelesslink/build/zephyr/zephyr.hex
+            wirelesslink/build/zephyr/zephyr.bin
+            wirelesslink/build/app_update.bin
+            wirelesslink/build/*.zip
+          retention-days: 30
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-logs
+          path: wirelesslink/build/
+
+      - name: Generate build summary
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          if [ -f wirelesslink/build/zephyr/zephyr.hex ]; then
+            echo "✅ Firmware build successful" >> $GITHUB_STEP_SUMMARY
+            ls -lh wirelesslink/build/zephyr/zephyr.* >> $GITHUB_STEP_SUMMARY || true
+          else
+            echo "❌ Firmware build failed" >> $GITHUB_STEP_SUMMARY
+          fi
