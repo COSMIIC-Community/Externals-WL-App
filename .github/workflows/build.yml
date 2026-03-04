@@ -62,16 +62,6 @@ jobs:
           cd ${{ github.workspace }}/wirelesslink
           . ${{ github.workspace }}/ncs/zephyr/zephyr-env.sh
           west build -b cosmiic_wireless_link/nrf5340/cpuapp -d build -- -DBOARD_ROOT=${{ github.workspace }}/wirelesslink
-
-      - name: Generate DFU package
-        if: success()
-        run: |
-          cd ${{ github.workspace }}/wirelesslink/build
-          # Create a DFU package for the application
-          python3 ${{ github.workspace }}/ncs/nrf/scripts/bootloader/generate_dfu_zip.py \
-            --application app_update.bin \
-            --output-directory . \
-            --application-version-number 1 || true
           
       - name: Upload build artifacts
         if: success()
@@ -79,10 +69,8 @@ jobs:
         with:
           name: firmware-build
           path: |
-            wirelesslink/build/zephyr/zephyr.hex
-            wirelesslink/build/zephyr/zephyr.bin
-            wirelesslink/build/app_update.bin
-            wirelesslink/build/*.zip
+            wirelesslink/build/wirelesslink/zephyr/zephyr.signed.bin
+            wirelesslink/build/dfu_application.zip
           retention-days: 90
 
       - name: Upload build logs on failure
@@ -96,7 +84,7 @@ jobs:
         if: always()
         run: |
           echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          if [ -f wirelesslink/build/zephyr/zephyr.hex ]; then
+          if [ -f wirelesslink/build/wirelesslink/zephyr/zephyr.signed.bin ]; then
             echo "✅ Firmware build successful" >> $GITHUB_STEP_SUMMARY
             ls -lh wirelesslink/build/zephyr/zephyr.* >> $GITHUB_STEP_SUMMARY || true
           else
