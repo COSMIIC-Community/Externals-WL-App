@@ -905,6 +905,7 @@ bool OutputDisplayLine(uint8_t line, char* str, uint8_t len)
 #define CG_LILSTAR   7
 #define CG_NUM		 8
 
+#define CG_ASTERISK 0b00101010
 #define CG_BLANK 	0b00100000 
 #define CG_MUSIC    0b10010000 
 #define CG_TRIANGLE 0b00010000 
@@ -941,6 +942,43 @@ static const uint8_t customCharBattery[7][8] = {CUSTOMCHAR_BATTERY0,
 										CUSTOMCHAR_BATTERY5,
 										CUSTOMCHAR_BATTERY6 };																			
 
+										#define BAT_MIN 2400
+#define BAT_MAX 4300
+//returns true if ignoring battery volatges that are invalid when calculating average.  
+bool getBatteryAverages(uint16_t *vAvg, int16_t *iAvg, uint16_t v1, uint16_t v2, uint16_t v3, int16_t i1, int16_t i2, int16_t i3)
+{
+	uint8_t cnt = 3;
+	if (v1 > BAT_MAX || v1 < BAT_MIN){
+		v1 = 0; 
+		i1 = 0;
+		cnt --;
+	}
+	if (v2 > BAT_MAX || v2 < BAT_MIN){
+		v2 = 0; 
+		i2 = 0;
+		cnt --;
+	}
+	if (v3 > BAT_MAX || v3 < BAT_MIN){
+		v3 = 0; 
+		i3 = 0;
+		cnt --;
+	}
+	if (cnt==0) {
+		*vAvg = 0;
+		*iAvg = 0;
+	}
+	else{
+		*vAvg = (v1+v2+v3)/cnt;
+		*iAvg = (i1+i2+i3)/cnt;
+	}
+	if (cnt < 3)
+	{
+		return true; //at least one battery reading was invalid
+	}
+	else{
+		return false; //all battery readings were valid
+	}
+}
 
 void setMenuIcons()
 {
@@ -1757,6 +1795,9 @@ void setChargerParams(uint8_t* params)
 #define PM_WARN_TEMP    380
 #define PM_MAX_TEMP		400
 
+#define MAX_ERR_SYS		10 //maximium number of errors trying to read sys power levels before error
+#define MAX_ERR_CD		10 //maximium number of errors trying to read CD power levels before error
+
 #define TIME_MIN_TARGET_CHANGE 5 //in s
 #define TARGET_INCREMENT 5
 #define TARGET_MAX      100
@@ -1786,6 +1827,8 @@ void setChargerParams(uint8_t* params)
 #define CHARGING_ERROR_SYSCURRENT   11
 #define CHARGING_ERROR_CDCURRENT    12
 #define CHARGING_ERROR_CDVOLTAGE    13
+#define CHARGING_ERROR_SYS_READ     14
+#define CHARGING_ERROR_CD_READ      15 
 
 
 #define PLAYSOUND_NONE       0
@@ -1916,6 +1959,7 @@ void charge(void)
 	char charWarnPMTemp;
 	char charWarnCoupling;
 	char charWarnCoilV;
+	char charBatErr = CG_BLANK;
 	uint8_t target = 0xFF; 
 	uint8_t disptarg = 0;
 	uint8_t buf[8];
@@ -1948,6 +1992,7 @@ void charge(void)
 	
 	struct audioList_type audioList;
 	uint8_t displayMode = DISPLAY_NONE;
+	uint8_t errCntSys = 0, errCntCD = 0;
 
 	uint8_t n;
 	char logStr[120];
@@ -2002,11 +2047,19 @@ void charge(void)
 			{
 				chargingError = CHARGING_ERROR_SYSCURRENT;
 				break;
+			} else {
+				errCntSys = 0;
 			}
 		}
 		else
 		{
+			errCntSys++;	
 			LOG_INF("Failed to get System Power");
+			if (errCntSys > MAX_ERR_SYS)
+			{
+				chargingError = CHARGING_ERROR_SYS_READ;
+				break;
+			}
 		}
 
 		//Get Coil Data
@@ -2018,15 +2071,23 @@ void charge(void)
 				chargingError = CHARGING_ERROR_CDCURRENT;
 				break;
 			}
-			if(voltageCD > MAX_COIL_VOLTAGE || (chargerMode == CHARGER_MODE_CHARGE_NOFEEDBACK && voltageCD > MAX_COIL_VOLTAGE_NOFEEDBACK))
+			else if(voltageCD > MAX_COIL_VOLTAGE || (chargerMode == CHARGER_MODE_CHARGE_NOFEEDBACK && voltageCD > MAX_COIL_VOLTAGE_NOFEEDBACK))
 			{
 				chargingError = CHARGING_ERROR_CDVOLTAGE;
 				break;
+			} else {
+				errCntCD = 0;
 			}
 		}
 		else
 		{
+			errCntCD++;
 			LOG_INF("Failed to get CD Power");
+			if (errCntCD > MAX_ERR_CD)
+			{
+				chargingError = CHARGING_ERROR_CD_READ;
+				break;
+			}
 		}
 
 		//Get Coil temperature
@@ -2497,9 +2558,11 @@ void charge(void)
 						
 					}
 
-					BavgV = (B1V+B2V+B3V)/3;
-					BavgI = (B1I+B2I+B3I)/3;
-
+					if( getBatteryAverages(&BavgV, &BavgI, B1V, B2V, B3V, B1I, B2I, B3I) ){
+						charBatErr = CG_ASTERISK;
+					} else {
+						charBatErr = CG_BLANK;
+					}
 					displayMode = DISPLAY_PMFEEDBACK;
 					
 
@@ -2575,7 +2638,7 @@ void charge(void)
 				case DISPLAY_SET_CLOCK:
 					sprintf(&str[20], "                    "\
 								 	  "Found PM#%4d v%04d"\   
-								 	  "   Setting clock..    ",	serialPM); //keep PM rev and serial# visible
+								 	  "   Setting clock..    ",	serialPM, revPM); //keep PM rev and serial# visible
 					break;
 
 				case DISPLAY_RADIO_WARN:
@@ -2589,10 +2652,10 @@ void charge(void)
 					setIconVoltage(BavgV);
 					sprintf(&str[20], "%1c %1c%2d.%1d%1c            "\
 								 	"%1c %1c%2d.%1dV  %3d/%3d   "\
-								 	"%1c  %4dmV  %4dmA  %1c", 
+								 	"%1c  %4dmV%1c %4dmA  %1c", 
 							CG_PERSON, charWarnPMTemp, tempPM/10, tempPM%10, CG_DEGREEC, 
 							CG_LIGHTNING, charWarnCoupling,vrec/10, vrec%10, cmd, disptarg,
-							CG_BATTERY, BavgV, BavgI/10, CG_RADIO);
+							CG_BATTERY, BavgV, charBatErr, BavgI/10, CG_RADIO);
 					// sprintf(str, "coil: %1c%2d.%1dC  %1c%1d.%02dVimpl: %1c%2d.%1dC   %1d.%02dAVrec: %1c%2d.%1dV %3d/%3dBatt: %4dmV%4d.%1dmA", 
 					// 	charWarnCoilTemp, tempCD/10, tempCD%10, charWarnCoilV, voltageCD/1000, (voltageCD%1000)/10,
 					// 	charWarnPMTemp, tempPM/10, tempPM%10, currentCD/1000, (currentCD%1000)/10,
@@ -2699,6 +2762,12 @@ void charge(void)
 			break;
 		case CHARGING_ERROR_CDVOLTAGE:
 			OutputDisplay(1, "","       ERROR        ", " Coil Drive Voltage ","",0, 20,20,0);
+			break;
+		case CHARGING_ERROR_SYS_READ :
+			OutputDisplay(1, "","       ERROR        ", "    SysPower Read   ","",0, 20,20,0);
+			break;
+		case CHARGING_ERROR_CD_READ :
+			OutputDisplay(1, "","       ERROR        ", "    CD Power Read   ","",0, 20,20,0);
 			break;
 
 	}	
@@ -2839,6 +2908,8 @@ uint8_t getAppRadioFromPMBoot(uint8_t* addrAP, uint8_t* addrPM, uint8_t* chan, u
 	medRadio.buf[0] = 0x17;
 	medRadio.source = SOURCE_CHARGER;
 	struct cmdHandler_type cmdHandler;
+
+	k_msgq_purge(&charger_resp_msgq); //purge any ongoing charger requests that weren't handled
 
 	LOG_HEXDUMP_INF(medRadio.buf, medRadio.len, "TX MedRadio Packet");
 	while(k_msgq_put(&imp_req_msgq, &medRadio, K_NO_WAIT) != 0)
@@ -2986,6 +3057,7 @@ int8_t transmit(uint8_t node, uint8_t* data, uint8_t len, uint8_t counter, uint8
 
 	medRadio.source = SOURCE_CHARGER;
 
+	k_msgq_purge(&charger_resp_msgq); //purge any ongoing charger requests that weren't handled
 
 	LOG_HEXDUMP_INF(medRadio.buf, medRadio.len, "TX MedRadio Packet");
 	while(k_msgq_put(&imp_req_msgq, &medRadio, K_NO_WAIT) != 0)

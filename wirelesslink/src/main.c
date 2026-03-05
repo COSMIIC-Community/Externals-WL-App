@@ -122,6 +122,8 @@ LOG_MODULE_REGISTER(app);
 #define KEY_ACTION2	       DK_BTN4_MSK
 
 
+#define WL_BATTERY_LOW 3300
+
 #define UART_BUF_SIZE CONFIG_BT_NUS_UART_BUFFER_SIZE
 #define UART_WAIT_FOR_BUF_DELAY K_MSEC(50)
 #define UART_WAIT_FOR_RX 500 //time in microseconds
@@ -1557,6 +1559,11 @@ int main(void)
 			if(getBLEMode() == BLE_MODE_OPEN_ADVERT){k_sleep(K_MSEC(100));}  //fast blink in pairing mode
 			else {k_sleep(K_MSEC(900));}  //slow blink otherwise
 		} 
+
+		if (get_adc_sample() < WL_BATTERY_LOW)
+		{
+			//JML TODO: play warning sound here
+		}
 	}
 }
 void uiEraseBonds(void)

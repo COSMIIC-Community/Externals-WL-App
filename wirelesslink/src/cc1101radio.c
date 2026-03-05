@@ -62,6 +62,7 @@
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include "charger.h" //JML temporary until SDO functions are moved outt of charger
+#include "audio.h"
 
 
 K_SEM_DEFINE(medradio_init_ok, 0, 1);
@@ -406,13 +407,22 @@ uint16_t getTimeRemainingInSession()
 	return (uint16_t) t;  //session time is max 60s, value in ms
 }
 
-
+#define VBAT_MEDIUM   3700
+#define VBAT_LOW      3500
+#define VBAT_DEPLETED 3450
 void maintain_medRadio_thread(void)
 {
 	//uint8_t pkt[] = {0x0B, 0x24, 0x00, 0x01, 0x07, 0x18, 0x10, 0x04, 0x00};
 	uint8_t resp[21];
 	uint16_t b[3];
 	uint16_t bavg;
+	int16_t dummy;
+	uint16_t beepcnt = 0, cnt = 0;
+	struct audioList_type audioList;
+	bool playsound = false;
+
+	uint16_t batterySoundNotes[6] = {2273, 1136, 2273};
+	uint16_t batterySoundTimes[6] = {200, 200, 200};
 	
 	while(1)
 	{
@@ -426,9 +436,48 @@ void maintain_medRadio_thread(void)
 			//sendRadioPacket(pkt, sizeof(pkt));
 			ReadSDO(7, 0x3000, 13, 1, resp);
 			memcpy(b, &resp[6], sizeof(b));
-			bavg = (b[0] + b[1] + b[2])/3;
+			getBatteryAverages(&bavg, &dummy, b[0], b[1], b[2], 0, 0 ,0);
 			LOG_INF("battery %d", bavg);
 
+			if (bavg < VBAT_DEPLETED)
+			{
+				beepcnt = 300; cnt = beepcnt;
+			} else if (bavg < VBAT_LOW)
+			{
+				beepcnt = 600; cnt = beepcnt;
+			} else if (bavg < VBAT_MEDIUM && beepcnt == 0){
+				beepcnt = 0xFFFF; cnt = 0;
+			}
+
+		}
+		if(beepcnt)
+		{
+			if(beepcnt == 0xFFFF){
+				playsound = true;
+			}
+			else{
+				if (cnt++ >= beepcnt)
+				{
+					cnt = 0;
+					playsound = true;
+				}
+			}					
+		}
+		if (playsound)
+		{
+			audioList.len =  sizeof(batterySoundNotes)/sizeof(batterySoundNotes[0]);
+			memcpy(&audioList.notePeriod[0],batterySoundNotes, sizeof(batterySoundNotes));
+			memcpy(&audioList.noteTime[0],batterySoundTimes, sizeof(batterySoundTimes));
+					
+	
+			while(k_msgq_put(&audio_msgq, &audioList, K_NO_WAIT) != 0)
+			{
+				/* message queue is full: purge old data & try again */
+				LOG_INF("Purging Audio MsgQ");
+				k_msgq_purge(&audio_msgq);
+			}
+			playsound = false;
+		
 		}
 		k_msleep(100);
 	}
