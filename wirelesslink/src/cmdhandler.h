@@ -6,9 +6,9 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define WL_IN_CHARGER true
+#define WL_IN_CHARGER false
 #define HW_REV 1 //up to 65535
-#define SW_REV 14 //up to 65535
+#define SW_REV 15 //up to 65535
 
 #define PKT_HEADER_LEN 3
 #define MIN_PKT_LEN PKT_HEADER_LEN // when checksum added, this will change
@@ -80,10 +80,11 @@ extern struct k_msgq cmd_req_msgq;
 #define GREEN_LED_RADIO_RESPONSE BIT1
 #define RED_LED_RADIO_ERROR		 BIT2
 #define LED_CHARGER				 BIT3
+#define WHITE_LED_USB  			 BIT4
 #define LED_MANUAL				 BIT6
 #define LED_AUDIO_OFF  		 	 BIT7
 
-#define LED_DEFAULT_MODE_WL		 BIT0|BIT1|BIT2
+#define LED_DEFAULT_MODE_WL		 BIT0|BIT1|BIT2|BIT4
 #define LED_DEFAULT_MODE_CHARGER BIT3  //|BIT7
 
 extern uint8_t modeLED;
@@ -113,9 +114,10 @@ extern uint8_t modeLED;
 #define INDEX_CMD_PAYLOAD     3
 #define NON_PAYLOAD_CMD_BYTES 3
 
-#define BLE_MODE_READY       3
-#define BLE_MODE_OPEN_ADVERT 2
-#define BLE_MODE_ADVERT      1
+#define BLE_MODE_READY       4
+#define BLE_MODE_OPEN_ADVERT 3
+#define BLE_MODE_ADVERT      2
+#define BLE_MODE_CONNECTING  1
 #define BLE_MODE_NONE        0
 
 #define SYNC_BYTE  0xFF

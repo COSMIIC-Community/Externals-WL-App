@@ -192,7 +192,10 @@ void enableDebug1(bool enable){
 	gpio_pin_set(gpiodev1, WL1PIN_DEBUG1, enable );
 }
 
-
+//Charging status returns 0 when true, 1 when false 
+//0b111 running off battery
+//0b100 running off USB, charging
+//0b010 running off USB, done charging (or no battery)
 uint8_t getChargingStatus(void)
 {
 	int val;

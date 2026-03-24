@@ -65,6 +65,7 @@
 #include "wlgpio.h"
 #include "spi.h"
 #include "imu.h"
+#include "audio.h"
 
 
 
@@ -115,14 +116,23 @@ LOG_MODULE_REGISTER(app);
 #define GREEN_LED   DK_LED2
 #define BLUE_LED    DK_LED3
 
-
 #define KEY_PASSKEY_ACCEPT DK_BTN1_MSK
 #define KEY_PASSKEY_REJECT DK_BTN2_MSK
 #define KEY_ACTION1		   DK_BTN3_MSK
 #define KEY_ACTION2	       DK_BTN4_MSK
 
+#define WL_POWER_BATTERY		  1
+#define WL_POWER_USB_CHARGING     2
+#define WL_POWER_USB              3
 
-#define WL_BATTERY_LOW 3300
+#define WL_BATTERY_HIGH 	4000
+#define WL_BATTERY_MED  	3700
+#define WL_BATTERY_LOW   	3500
+#define WL_BATTERY_ALERT    3300
+#define WL_BATTERY_CRITICAL 3100
+
+#define WL_BATTERY_CRITICAL_TIME  30//in s  
+#define WL_BATTERY_ALERT_TIME  	 600//in s   
 
 #define UART_BUF_SIZE CONFIG_BT_NUS_UART_BUFFER_SIZE
 #define UART_WAIT_FOR_BUF_DELAY K_MSEC(50)
@@ -168,6 +178,7 @@ static bool button1_held = false;
 static bool pairing_mode = false;
 static bool isAdvertising = false;
 static bool isReady = false;
+static bool isConnecting = false;
 static uint8_t bond_addr_list[CONFIG_BT_MAX_PAIRED][BT_ADDR_SIZE] = {0};
 
 static bool allowEnterLowPower = true;
@@ -342,9 +353,13 @@ uint8_t getBLEMode()
 		} else{
 			return BLE_MODE_ADVERT;
 		}
-	} else {
-		return BLE_MODE_NONE;
+	} 
+	if(isConnecting)
+	{
+		return BLE_MODE_CONNECTING;
 	}
+	
+	return BLE_MODE_NONE;
 }
 
 static void stop_adv_work_handler(struct k_work *work)
@@ -873,6 +888,8 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
+	isConnecting = true;
+
 	//stop advertising since we are only supporting 1 connection
 	ble_stop_advertising();
 
@@ -906,11 +923,13 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	char addr[BT_ADDR_LE_STR_LEN];
 
+
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	LOG_INF("Disconnected: %s (reason %u)", addr, reason);
 
 	isReady = false;
+	isConnecting = false;
 	ble_start_advertising();
 
 }
@@ -1411,13 +1430,109 @@ void ble_stop_advertising(void){
 	isAdvertising = false;
 }
 
+void wl_startup(void)
+{
+	dk_set_led_on(BLUE_LED);
+	setBuzzerPeriod(9092, 200); //acts as 200ms pause
+	dk_set_led_off(BLUE_LED);
+	k_msleep(300); 
+	
+	dk_set_led_on(GREEN_LED);
+	setBuzzerPeriod(4546, 200);
+	dk_set_led_off(GREEN_LED);
+	k_msleep(300); 
+
+	dk_set_led_on(RED_LED);
+	setBuzzerPeriod(2273, 200);
+	dk_set_led_off(RED_LED);
+	k_msleep(300); 
+
+	#if !WL_IN_CHARGER
+		if(BIT0 & getChargingStatus())
+		{
+			uint16_t bat = get_adc_sample();
+			if(bat >  WL_BATTERY_HIGH)
+			{
+				setLEDs(1,1,1);
+				setBuzzerPeriod(4546, 100);
+				setLEDs(0,0,0);
+				k_msleep(400); 
+			}
+			if(bat >  WL_BATTERY_MED)
+			{
+				setLEDs(1,1,1);
+				setBuzzerPeriod(4546, 100);
+				setLEDs(0,0,0);
+				k_msleep(400); 
+			}
+			if(bat >  WL_BATTERY_LOW)
+			{
+				setLEDs(1,1,1);
+				setBuzzerPeriod(4546, 100);
+				setLEDs(0,0,0);
+				k_msleep(400); 
+			}
+			k_msleep(500);
+		}
+	#endif
+}
+
+//returns 1 if running on battery, 2 if connected to USB and charging, 3 if connected to USB and and done charging (or no battery connected)
+uint8_t wl_battery_check(void)
+{
+	uint16_t bat = get_adc_sample();
+	static uint64_t timePlay = 0; //keep track of last time sound was played
+
+	uint16_t batterySoundNotes[6] = {2273, 0, 2273, 0, 2273};
+	uint16_t batterySoundTimes[6] = {200, 100, 200, 100, 200};
+	
+	LOG_DBG("WL Battery Level %4d mV\n)", bat);
+	
+	uint8_t stat = getChargingStatus();
+
+	if(stat & BIT0) //WL is running off battery
+	{
+
+		if(   (bat < WL_BATTERY_CRITICAL && (k_uptime_get()- timePlay)/1000 > WL_BATTERY_CRITICAL_TIME)
+			|| (bat < WL_BATTERY_ALERT && (k_uptime_get()- timePlay)/1000 > WL_BATTERY_ALERT_TIME )  )
+		{
+			struct audioList_type audioList;
+			
+			audioList.len =  sizeof(batterySoundNotes)/sizeof(batterySoundNotes[0]);
+			memcpy(&audioList.notePeriod[0],batterySoundNotes, sizeof(batterySoundNotes));
+			memcpy(&audioList.noteTime[0],batterySoundTimes, sizeof(batterySoundTimes));
+					
+
+			while(k_msgq_put(&audio_msgq, &audioList, K_NO_WAIT) != 0)
+			{
+				/* message queue is full: purge old data & try again */
+				LOG_INF("Purging Audio MsgQ");
+				k_msgq_purge(&audio_msgq);
+			}
+			timePlay = k_uptime_get();
+		}
+		return WL_POWER_BATTERY;
+	}
+	else 
+	{
+		if (stat & BIT2) //charging
+		{
+			return WL_POWER_USB_CHARGING;
+		} 
+		else 
+		{
+			return WL_POWER_USB;
+		}
+	}
+
+}
 
 
 int main(void)
 {
 	int err = 0;
 	//char *device_name = "WL_1234";
-
+	uint8_t stat = 0;
 	
 
 	LOG_INF("Entered Main");
@@ -1494,29 +1609,10 @@ int main(void)
 	initRadioConfig();
 	LOG_INF("MedRadio initialized");
 
-	k_sleep(K_MSEC(100)); //pauses for logging to catch up
+	wl_startup(); //do after init_adc, and before ble start advertising
 
-
-	setBuzzerPeriod(9092, 200);
-	dk_set_led_on(BLUE_LED);
-	k_sleep(K_MSEC(300)); 
-	dk_set_led_off(BLUE_LED);
-	
-	setBuzzerPeriod(4546, 200);
-	dk_set_led_on(GREEN_LED);
-	k_sleep(K_MSEC(300)); 
-	dk_set_led_off(GREEN_LED);
-
-	setBuzzerPeriod(2273, 200);
-	dk_set_led_on(RED_LED);
-	k_sleep(K_MSEC(300)); 
-	dk_set_led_off(RED_LED);
-
-	
 	ble_start_advertising();
 	
-	k_sleep(K_MSEC(100)); //pauses for logging to catch up
-
 	for (uint8_t i=0; i<MAX_ACTIONS; i++){ 
 		err = saved_settings_read(ACTION_SETTINGS_ID+i, &action[i], sizeof(action[i]));
 		if(err > 0)
@@ -1541,6 +1637,18 @@ int main(void)
 	}
 
 	//Just blink LED infinitely, everything else happens in separate threads
+	//If this is a WL (not a Smart Charger)
+	// if BLE is connected: 
+	//    * light will be solid blue (whether powered by USB or not)
+	// if advertising on BLE (fast blink if open pairing mode, slow blink otherwise)
+	//    * powered by USB: light will blink between blue and white 
+	//    * powered by battery: blue and none if not
+	// if not advertising or connected on BLE
+	//    * powered by USB: 
+	//          * light will be solid white if battery is fully charged or no battery present
+	//          * light will blink white if battery is charging 
+	//    * powered by battery: no light, will enter low power mode
+
 	//uint8_t cnt = 0;
 	for (;;) {
 
@@ -1551,19 +1659,55 @@ int main(void)
 			
 		} 
 
-		if(modeLED & BLUE_LED_BLE_ADV && (getBLEMode())) {dk_set_led_on(BLUE_LED);}
-		k_sleep(K_MSEC(100));
+		#if !WL_IN_CHARGER
+			stat = wl_battery_check();
+			//The WL will enter low power if not connected to USB, and BLE is no longer advertising, and we are not in BLE connection
+			if (stat ==  WL_POWER_BATTERY && getBLEMode() == BLE_MODE_NONE)
+			{
+				setLowPower(); 
+			}
+		#endif
+
+
+		if( (modeLED & BLUE_LED_BLE_ADV) && (getBLEMode()>BLE_MODE_CONNECTING) ) 
+		{
+			setLEDs(0,0,2); //turn off all LEDs but blue to make blue more obvious
+			k_msleep(100);
+			setLEDs(0,0,1); //turn on Blue LED
+		}
+
+		k_msleep(100);
 		if(getBLEMode() != BLE_MODE_READY ){
-			if(modeLED & BLUE_LED_BLE_ADV){dk_set_led_off(BLUE_LED);}
+			//if connected to USB, LEDs will blink between blue and white, if not conencted to USB, LEDS will blink between blue and none
+			if ( (stat == WL_POWER_USB_CHARGING || stat == WL_POWER_USB ) && (modeLED & WHITE_LED_USB)) 
+			{
+				setLEDs(1,1,1); //turn on all LEDs (white)
+				k_msleep(100);
+				if (stat == WL_POWER_USB_CHARGING && getBLEMode() == BLE_MODE_NONE ) // charging not yet complete
+				{
+					setLEDs(0,0,0); //turn off all LEDs
+				}
+			}
+			else if(modeLED & BLUE_LED_BLE_ADV)
+			{
+				setLEDs(0,0,0); //turn off Blue LED
+				k_msleep(100);
+			}
 			
-			if(getBLEMode() == BLE_MODE_OPEN_ADVERT){k_sleep(K_MSEC(100));}  //fast blink in pairing mode
-			else {k_sleep(K_MSEC(900));}  //slow blink otherwise
+			
+			//this determines the white blink rate too
+			if(getBLEMode() == BLE_MODE_OPEN_ADVERT){
+				k_msleep(100); //fast blink in pairing mode
+			}  
+			else {
+				k_msleep(900); //slow blink in regular advertising mode.  
+			}  
+
+			
+			
 		} 
 
-		if (get_adc_sample() < WL_BATTERY_LOW)
-		{
-			//JML TODO: play warning sound here
-		}
+
 	}
 }
 void uiEraseBonds(void)
