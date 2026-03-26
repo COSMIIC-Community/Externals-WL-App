@@ -802,8 +802,8 @@ void writeRTC(uint8_t *rtc)
 	}
 }
 
-
-void writeDisplay(uint8_t reg, uint8_t val)
+//returns 1 success or 0 fail
+bool writeDisplay(uint8_t reg, uint8_t val)
 {
 	int ret;
 	uint8_t config[2];
@@ -812,7 +812,9 @@ void writeDisplay(uint8_t reg, uint8_t val)
 	ret = i2c_write_dt(&dev_i2c_lcd, config, sizeof(config));
 	if(ret != 0){
 		LOG_INF("Failed to write to I2C device address %x at reg. %x \n\r", dev_i2c_lcd.addr,config[0]);
+		return false;
 	}
+	return true;
 }
 
 #define DISP_CMD 0x00
@@ -881,7 +883,10 @@ bool OutputDisplayLine(uint8_t line, char* str, uint8_t len)
 
 	for(i=0;i<len;i++)    // Output line 1
 	{
-		writeDisplay(DISP_DATA, str[i]); //write character i
+		if(!writeDisplay(DISP_DATA, str[i])) //write character i
+		{
+			break;  //don't loop display commands if they are failing, because this could take a long time for 80 char updates
+		}
 	}
 
 	isBusy = false;
@@ -1516,6 +1521,10 @@ static int lsdir(const char *path)
 	return res;
 }
 
+#define MAX_SYSTEM_CURRENT  2500 //in mA (sytem has 3A fuse)
+#define MAX_COILDRIVE_CURRENT 3500 //in mA                    8V*3.5A = 28W < 30W = 12V*2.5A
+#define MAX_COIL_VOLTAGE_NOFEEDBACK 6500 //in mV
+
 //JML Note: if this is set to leave coil on for longer than watchdog reset time, Charger will reset since it does not feed the watchdog
 void tuneCoil(void)
 {
@@ -1525,7 +1534,8 @@ void tuneCoil(void)
 	uint16_t opt_freq = 0; //in Hz
 	uint16_t freq = min_freq;
 	uint16_t max_current = 0; //in mA
-	uint16_t current = 0; //in mA
+	uint16_t current = 0; //in mA (measured)
+	uint16_t voltage = 0; //in mV (measured)
 	uint32_t period;
 	uint16_t opt_period = 0;
 	char str[21];
@@ -1552,14 +1562,21 @@ void tuneCoil(void)
 		k_msleep(100);
 
 
-		if(getCDPower(&current, NULL))
+		if(getCDPower(&current, &voltage))
 		{
+			//safety check
+			if (voltage > MAX_COIL_VOLTAGE_NOFEEDBACK || current > MAX_COILDRIVE_CURRENT)
+			{
+				break; //error, quit early
+			}
+
 			n = sprintf(str, " %4d Hz  %4d mA ", freq, current);
 			OutputDisplayLine(2, str, n);
 		}
 		else
 		{
 			LOG_INF("Failed to get CD Power");
+			break; //error, quit early
 		}
 
 
@@ -1676,8 +1693,6 @@ void metalDetect(void)
 	sprintf(str, "  Maximum:%6d mA ", max_current);
 	OutputDisplayLine(4, str, 20);
 
-	LOG_INF("Failed to get CD Power");
-
 	timeCheck = k_uptime_get();
 	k_msleep(100);
 	while((k_uptime_get()-timeCheck)/1000 < METAL_DETECT_TIME)
@@ -1689,6 +1704,12 @@ void metalDetect(void)
 
 		if(getCDPower(&current, &voltage))
 		{
+			//Safety check:
+			if (voltage > MAX_COIL_VOLTAGE_NOFEEDBACK || current > MAX_COILDRIVE_CURRENT)
+			{
+				break; //error, quit early
+			}
+
 			sprintf(str, "  Current:%6d mA ", current);
 			OutputDisplayLine(2, str, 20);
 			LOG_INF("Current:%d", current);
@@ -1735,6 +1756,7 @@ void metalDetect(void)
 		else
 		{
 			LOG_INF("Failed to get CD Power");
+			break;
 		}
 
 		LOG_INF("METAL DETECT");
@@ -1782,8 +1804,6 @@ void setChargerParams(uint8_t* params)
 }
 
 
-#define MAX_SYSTEM_CURRENT  2500 //in mA (sytem has 3A fuse)
-#define MAX_COILDRIVE_CURRENT 3500 //in mA                    8V*3.5A = 28W < 30W = 12V*2.5A
 
 #define COIL_OPEN_TEMP	100
 #define COIL_GOOD_TEMP	400
@@ -1795,8 +1815,8 @@ void setChargerParams(uint8_t* params)
 #define PM_WARN_TEMP    380
 #define PM_MAX_TEMP		400
 
-#define MAX_ERR_SYS		10 //maximium number of errors trying to read sys power levels before error
-#define MAX_ERR_CD		10 //maximium number of errors trying to read CD power levels before error
+#define MAX_ERR_SYS		5 //maximium number of errors trying to read sys power levels before error
+#define MAX_ERR_CD		5 //maximium number of errors trying to read CD power levels before error
 
 #define TIME_MIN_TARGET_CHANGE 5 //in s
 #define TARGET_INCREMENT 5
@@ -1857,7 +1877,7 @@ void setChargerParams(uint8_t* params)
 #define DISPLAY_SET_CLOCK  7
 #define DISPLAY_NO_FEEDBACK 8
 
-#define MAX_COIL_VOLTAGE_NOFEEDBACK 6500 //in mV
+
 
 #define TIME_CYLCE_LED_ON  250
 #define TIME_CYLCE_LED_OFF 250
@@ -2071,13 +2091,18 @@ void charge(void)
 				chargingError = CHARGING_ERROR_CDCURRENT;
 				break;
 			}
-			else if(voltageCD > MAX_COIL_VOLTAGE || (chargerMode == CHARGER_MODE_CHARGE_NOFEEDBACK && voltageCD > MAX_COIL_VOLTAGE_NOFEEDBACK))
-			{
+			
+			if(fullUpdate) {
+				if(voltageCD > MAX_COIL_VOLTAGE)
+				{
+					chargingError = CHARGING_ERROR_CDVOLTAGE;
+					break;
+				}
+			} else if (voltageCD > MAX_COIL_VOLTAGE_NOFEEDBACK){
 				chargingError = CHARGING_ERROR_CDVOLTAGE;
 				break;
-			} else {
-				errCntCD = 0;
 			}
+			errCntCD = 0;
 		}
 		else
 		{
