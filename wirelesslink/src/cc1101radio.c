@@ -410,19 +410,20 @@ uint16_t getTimeRemainingInSession()
 #define VBAT_MEDIUM   3700
 #define VBAT_LOW      3500
 #define VBAT_DEPLETED 3450
+#define VBAT_HYST		50	
 void maintain_medRadio_thread(void)
 {
 	//uint8_t pkt[] = {0x0B, 0x24, 0x00, 0x01, 0x07, 0x18, 0x10, 0x04, 0x00};
 	uint8_t resp[21];
 	uint16_t b[3];
 	uint16_t bavg;
+	uint16_t hystMedium=0, hystLow=0, hystDepleted=0;
 	int16_t dummy;
 	uint16_t beepcnt = 0, cnt = 0;
 	struct audioList_type audioList;
-	bool playsound = false;
 
-	uint16_t batterySoundNotes[6] = {2273, 1136, 2273};
-	uint16_t batterySoundTimes[6] = {200, 200, 200};
+	uint16_t batterySoundNotes[3] = {2273, 1136, 2273};
+	uint16_t batterySoundTimes[3] = {200, 200, 200};
 	
 	while(1)
 	{
@@ -439,45 +440,59 @@ void maintain_medRadio_thread(void)
 			getBatteryAverages(&bavg, &dummy, b[0], b[1], b[2], 0, 0 ,0);
 			LOG_INF("battery %d", bavg);
 
-			if (bavg < VBAT_DEPLETED)
-			{
-				beepcnt = 300; cnt = beepcnt;
-			} else if (bavg < VBAT_LOW)
-			{
-				beepcnt = 600; cnt = beepcnt;
-			} else if (bavg < VBAT_MEDIUM && beepcnt == 0){
-				beepcnt = 0xFFFF; cnt = 0;
+			//once a battery gets below a threshold for a first time, the hysteresis value is set to prevent a minor increase in measured battery voltage from 
+			//going back up to higher level.  
+			if (bavg < VBAT_DEPLETED + hystDepleted){
+				if(hystDepleted == 0)
+				{
+					beepcnt = 300; //beep every ~30s assuming 100ms delay per cycle below
+					hystDepleted = VBAT_HYST;
+					cnt = beepcnt; 
+				}
+				LOG_INF("battery depleted");
+			} else if (bavg < VBAT_LOW + hystLow){
+				if(hystLow == 0)
+				{
+					beepcnt = 600; //beep every ~60s assuming 100ms delay per cycle below
+					hystLow = VBAT_HYST;
+					hystDepleted = 0;
+					cnt = beepcnt; //start with a beep
+				}
+				LOG_INF("battery low");
+			} else if (bavg < VBAT_MEDIUM + hystMedium){
+				if(hystMedium == 0)
+				{
+					beepcnt = 60000; //beep every ~6000s (effectively once) assuming 100ms delay per cycle below
+					hystMedium = VBAT_HYST;
+					hystLow = 0; hystDepleted = 0;
+					cnt = beepcnt;  //start with a beep
+				}
+				LOG_INF("battery medium");
+			} else { //battery well charged, no beeps
+				beepcnt = 0;
+				hystMedium = 0;	hystLow = 0; hystDepleted = 0;
+				LOG_INF("battery good");
 			}
 
 		}
-		if(beepcnt)
+		if(beepcnt > 0) 
 		{
-			if(beepcnt == 0xFFFF){
-				playsound = true;
-			}
-			else{
-				if (cnt++ >= beepcnt)
-				{
-					cnt = 0;
-					playsound = true;
-				}
-			}					
-		}
-		if (playsound)
-		{
-			audioList.len =  sizeof(batterySoundNotes)/sizeof(batterySoundNotes[0]);
-			memcpy(&audioList.notePeriod[0],batterySoundNotes, sizeof(batterySoundNotes));
-			memcpy(&audioList.noteTime[0],batterySoundTimes, sizeof(batterySoundTimes));
+			if(cnt++ >= beepcnt)
+			{
+				cnt = 0;
+
+				audioList.len =  sizeof(batterySoundNotes)/sizeof(batterySoundNotes[0]);
+				memcpy(&audioList.notePeriod[0],batterySoundNotes, sizeof(batterySoundNotes));
+				memcpy(&audioList.noteTime[0],batterySoundTimes, sizeof(batterySoundTimes));
 					
 	
-			while(k_msgq_put(&audio_msgq, &audioList, K_NO_WAIT) != 0)
-			{
-				/* message queue is full: purge old data & try again */
-				LOG_INF("Purging Audio MsgQ");
-				k_msgq_purge(&audio_msgq);
+				while(k_msgq_put(&audio_msgq, &audioList, K_NO_WAIT) != 0)
+				{
+					/* message queue is full: purge old data & try again */
+					LOG_INF("Purging Audio MsgQ");
+					k_msgq_purge(&audio_msgq);
+				}		
 			}
-			playsound = false;
-		
 		}
 		k_msleep(100);
 	}

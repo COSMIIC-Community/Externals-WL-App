@@ -8,7 +8,7 @@
 
 #define WL_IN_CHARGER true
 #define HW_REV 1 //up to 65535
-#define SW_REV 16 //up to 65535
+#define SW_REV 17 //up to 65535
 
 #define PKT_HEADER_LEN 3
 #define MIN_PKT_LEN PKT_HEADER_LEN // when checksum added, this will change

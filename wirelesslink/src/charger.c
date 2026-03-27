@@ -1681,7 +1681,17 @@ void metalDetect(void)
 		OutputDisplay(1, " Implant not found  ", "  Try Metal Detect  ","      Again         ","                    ",20,20,20,20 ); 
 	}
 
-	setCoilPeriod(1000000000/chargerParams.optimalfreq);  
+	
+	if(chargerParams.optimalfreq == 0)
+	{
+		setCoilPeriod(1000000000/3500);
+		OutputDisplay(1, "","   Coil not tuned   "," Using Default Freq ","",0,20,20,0 ); //Clear Display
+		k_msleep(1000);
+	}
+	else
+	{
+	    setCoilPeriod(1000000000/chargerParams.optimalfreq);
+	}
 	setDCDC(voltageSetting);
 	startDCDC();
 	startCoilDrive(); 
@@ -2020,7 +2030,16 @@ void charge(void)
 	uint8_t rtc[7] = {0,0,0,0,0,0,0}; //sec, min, hour, weekday, day, month, year in BCD format        
 
 	//Turn on the Coil
-	setCoilPeriod(1000000000/chargerParams.optimalfreq);
+	if(chargerParams.optimalfreq == 0)
+	{
+		setCoilPeriod(1000000000/3500);
+		OutputDisplay(1, "","   Coil not tuned   "," Using Default Freq ","",0,20,20,0 ); //Clear Display
+		k_msleep(1000);
+	}
+	else
+	{
+	    setCoilPeriod(1000000000/chargerParams.optimalfreq);
+	}
 	setDCDC(voltageSetting);
 	startDCDC();
 	startCoilDrive();

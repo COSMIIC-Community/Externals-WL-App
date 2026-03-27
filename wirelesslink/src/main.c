@@ -585,7 +585,7 @@ int16_t get_adc_sample(void)
 			LOG_ERR("Could not read (%d)", err);
 		}
 
-		LOG_INF("%d %d %d %d %d %d %d %d", adc_buf[0], adc_buf[1],adc_buf[2],adc_buf[3],adc_buf[4], adc_buf[5],adc_buf[6],adc_buf[7]);
+		//LOG_INF("%d %d %d %d %d %d %d %d", adc_buf[0], adc_buf[1],adc_buf[2],adc_buf[3],adc_buf[4], adc_buf[5],adc_buf[6],adc_buf[7]);
 		sum = 0;
 		for( int i=0; i<8; i++)
 		{
@@ -594,8 +594,7 @@ int16_t get_adc_sample(void)
 		}
 		val_mv = (int)sum/8;
 		
-		LOG_INF("ADC reading[%u]: %s, channel %d: Raw: %d", count++, adc_channel.dev->name,
-			adc_channel.channel_id, val_mv);
+		//LOG_INF("ADC reading[%u]: %s, channel %d: Raw: %d", count++, adc_channel.dev->name,adc_channel.channel_id, val_mv);
 
 		/* STEP 6 - Convert raw value to mV*/
 		err = adc_raw_to_millivolts_dt(&adc_channel, &val_mv);
@@ -604,7 +603,7 @@ int16_t get_adc_sample(void)
 		if (err < 0) {
 					LOG_WRN(" (value in mV not available)\n");
 			} else {
-				LOG_INF(" = %d mV", val_mv);
+				//LOG_INF(" = %d mV", val_mv);
 				}
 		return(val_mv);
 }
