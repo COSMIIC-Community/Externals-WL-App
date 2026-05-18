@@ -9,7 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+    container:
+      image: ghcr.io/zephyrproject-rtos/ci:v0.26.6
+
     env:
       NRF_CONNECT_SDK_VERSION: v3.1.1
 
@@ -17,60 +19,42 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             cmake \
-            ninja-build \
-            gperf \
-            ccache \
-            dfu-util \
-            device-tree-compiler \
-            libusb-1.0-0-dev
+            nodejs
 
-      - name: Install ARM toolchain
+      - name: Initialize West Workspace
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-              gcc-arm-none-eabi \
-              binutils-arm-none-eabi \
-              gdb-multiarch
-          # use Nordic/Zephyr GCC toolchain variant
-          echo "ZEPHYR_TOOLCHAIN_VARIANT=gnuarmemb" >> $GITHUB_ENV
-          echo "GNUARMEMB_TOOLCHAIN_PATH=/usr" >> $GITHUB_ENV
-
-      - name: Install nRF Connect SDK
-        run: |
-          pip install --upgrade pip
-          pip install west
-          mkdir -p ncs
-          cd ncs
-          west init -m https://github.com/nrfconnect/sdk-nrf.git --mr $NRF_CONNECT_SDK_VERSION
+          # Initialize west
+          west init -m https://github.com/nrfconnect/sdk-nrf.git --mr $NRF_CONNECT_SDK_VERSION workspace
+          cd workspace
+          
+          # Fetch dependencies
           west update
-          pip install -r zephyr/scripts/requirements.txt
-          pip install -r nrf/scripts/requirements.txt
-          pip install -r bootloader/mcuboot/scripts/requirements.txt
+          
+          # Export Zephyr CMake packages so the build system can find them
+          west zephyr-export      
 
       - name: Build firmware
         run: |
-          cd ${{ github.workspace }}/wirelesslink
-          . ${{ github.workspace }}/ncs/zephyr/zephyr-env.sh
-          west build -b cosmiic_wireless_link/nrf5340/cpuapp -d build -- -DBOARD_ROOT=${{ github.workspace }}/wirelesslink
-          
+          cd workspace
+          west build -b cosmiic_wireless_link/nrf5340/cpuapp \
+            -DBOARD_ROOT=${{ github.workspace }}/wirelesslink \
+            -d build \
+            ${{ github.workspace }}/wirelesslink \
+            --pristine=always
+
       - name: Upload build artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: firmware-build
           path: |
-            wirelesslink/build/wirelesslink/zephyr/zephyr.signed.bin
-            wirelesslink/build/dfu_application.zip
+            workspace/build/wirelesslink/zephyr/zephyr.signed.bin
+            workspace/build/dfu_application.zip
           retention-days: 90
 
       - name: Upload build logs on failure
@@ -78,7 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
-          path: wirelesslink/build/
+          path: workspace/build/
 
       - name: Generate build summary
         if: always()
