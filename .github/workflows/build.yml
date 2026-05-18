@@ -44,7 +44,7 @@ jobs:
           west build -b cosmiic_wireless_link/nrf5340/cpuapp \
             -d build \
             -- -DBOARD_ROOT=${{ github.workspace }}/wirelesslink \
-            --pristine=always --force
+            --pristine=always
 
       - name: Upload build artifacts
         if: success()
@@ -61,7 +61,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
-          path: workspace/build/
+          path: wirelesslink/build/
 
       - name: Generate build summary
         if: always()
