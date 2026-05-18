@@ -43,7 +43,7 @@ jobs:
           cd wirelesslink
           west build -p -b cosmiic_wireless_link/nrf5340/cpuapp \
             -d build \
-            -- -DBOARD_ROOT=${{ github.workspace }}/wirelesslink \
+            -- -DBOARD_ROOT=$(pwd)/../wirelesslink
 
       - name: Upload build artifacts
         if: success()
