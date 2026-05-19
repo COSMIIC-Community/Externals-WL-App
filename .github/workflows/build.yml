@@ -22,8 +22,6 @@ jobs:
 
       - name: Initialize West Workspace
         run: |
-          ls /opt/toolchains -l
-
           # Initialize west
           west init -m https://github.com/nrfconnect/sdk-nrf.git --mr $NRF_CONNECT_SDK_VERSION wirelesslink
           cd wirelesslink
