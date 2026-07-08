@@ -65,8 +65,11 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "audio.h"
 
 
-K_SEM_DEFINE(medradio_init_ok, 0, 1);
-K_SEM_DEFINE(medradio_sent, 0, 1);
+K_SEM_DEFINE(medradio_init_ok, 0, 1); //used to pause task that need MedRadio until it is initialized
+K_SEM_DEFINE(medradio_sent, 0, 1);    //used to indicate that req has been sent by WL
+K_SEM_DEFINE(medradio_req_resp, 0, 1); //used to limit access from multiple threads.  
+									  //Threads using the MedRadio should claim (take) this resource before sending out a MedRadio Request
+									  //and release (give) it up only afetr receiving a MedRadio Response (or timing out)
 
 
 
@@ -829,11 +832,12 @@ void initRadioConfig( void )
 	k_thread_suspend(medRadio_session_thread_id);
 
 	k_sem_give(&medradio_init_ok);
+	k_sem_give(&medradio_req_resp);
 
 }
 
 void loadRadioSettingsFromFlash(void) {
-	uint8_t	buf[7];
+	uint8_t	buf[7]={0};
 
 	if(saved_settings_read(RADIO_SETTINGS_ID, buf, sizeof(buf)) > 0)
 	{

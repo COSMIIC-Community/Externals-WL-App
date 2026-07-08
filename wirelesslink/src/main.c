@@ -1813,8 +1813,11 @@ void implant_reqresp_thread(void)
 		source = medRadio.source;
 		timeout = getMedRadioTimeout(); 
 		LOG_INF("Sending out MedRadio (Request Route %d) using Timeout: %d", source, timeout);
-		LOG_INF("main:ImpResp MsgQs in use: %d", k_msgq_num_used_get(&imp_resp_msgq));
-		//k_msgq_purge(&imp_resp_msgq); //purge any incoming messages responses prior to sending new request
+		if(k_msgq_num_used_get(&imp_resp_msgq))
+		{
+			LOG_INF("Purging outstanding MedRadio response before sending new request");
+			k_msgq_purge(&imp_resp_msgq); //purge any incoming messages responses prior to sending new request
+		}
 		sendRadioPacket(bufPtr, medRadio.len);  
 		medRadio.len = 0;
 		/* Wait (not indefinitely) for message to be sent to implant*/

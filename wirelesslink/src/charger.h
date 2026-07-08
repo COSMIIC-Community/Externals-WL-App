@@ -95,8 +95,5 @@ uint8_t getChargerParams(uint8_t* settings);
 void setChargerParams(uint8_t* settings);
 uint8_t getAppRadioFromPMBoot(uint8_t* addrAP, uint8_t* addrPM, uint8_t* chan, uint8_t* power);
 bool getBatteryAverages(uint16_t *vAvg, int16_t *iAvg, uint16_t v1, uint16_t v2, uint16_t v3, int16_t i1, int16_t i2, int16_t i3);
-void blockCmdHandlerMedRadioAccess();
-void unblockCmdHandlerMedRadioAccess();
-bool isCmdHandlerMedRadioAccessBlocked();
 #endif
 

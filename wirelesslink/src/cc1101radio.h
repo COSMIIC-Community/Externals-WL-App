@@ -27,7 +27,7 @@ extern struct k_msgq imp_resp_msgq;
 extern struct k_msgq imp_req_msgq;
 extern struct k_sem medradio_init_ok;
 extern struct k_sem medradio_sent;
-
+extern struct k_sem medradio_req_resp;
 
 //JML: does this need the __aligned(4) attribute
 struct medRadio_type {

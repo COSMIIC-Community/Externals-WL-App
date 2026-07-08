@@ -1202,13 +1202,13 @@ void command_handler_thread(void)
             {
                 medRadio.source = SOURCE_CMDHANDLER;
                 LOG_HEXDUMP_INF(medRadio.buf, medRadio.len, "TX MedRadio Packet");
-                while(isCmdHandlerMedRadioAccessBlocked())
-                {
-                    LOG_INF("cmdhandler waiting until Charger is done using MedRadio");
-                    k_msleep(10);
+                err = k_sem_take(&medradio_req_resp, K_MSEC(1000)); //wait for access to shared resource
+                if( err )
+                {       
+                    LOG_INF("cmdhandler MedRadio request could not be sent: Imp Req/Resp in use");
+                    break;
                 }
-                err = k_msgq_put(&imp_req_msgq, &medRadio, K_MSEC(1000)); //wait up to 1000ms for a previous request to complete
-                //the charger functionality takes priority in messages to PM over the command handler
+                err = k_msgq_put(&imp_req_msgq, &medRadio, K_NO_WAIT); 
                 if( err )
                 {       
                     LOG_INF("cmdhandler MedRadio request could not be sent: Imp Req in use");
@@ -1222,6 +1222,7 @@ void command_handler_thread(void)
             }
             //wait for response from Implant Req/Resp Thread or Coil Req/Resp Thread.             
             err = k_msgq_get(&cmd_resp_msgq, &cmdhandler, K_MSEC(timeout));
+            k_sem_give(&medradio_req_resp);  //release access to shared resource
             if( err )
 	        {       
                 LOG_INF("No valid response on CmdResp MsgQ within %dms", timeout);

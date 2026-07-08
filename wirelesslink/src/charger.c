@@ -2953,15 +2953,16 @@ uint8_t getAppRadioFromPMBoot(uint8_t* addrAP, uint8_t* addrPM, uint8_t* chan, u
 	medRadio.source = SOURCE_CHARGER;
 	struct cmdHandler_type cmdHandler;
 
-	blockCmdHandlerMedRadioAccess();
-
-   	LOG_INF("pmboot:ChargerResp MsgQs in use: %d", k_msgq_num_used_get(&charger_resp_msgq));
-	LOG_INF("pmboot:CmdResp MsgQs in use: %d", k_msgq_num_used_get(&cmd_resp_msgq));
-	LOG_INF("pmboot:ImpReq MsgQs in use: %d", k_msgq_num_used_get(&imp_req_msgq));
-	LOG_INF("pmboot:ImpResp MsgQs in use: %d", k_msgq_num_used_get(&imp_resp_msgq));
-	k_msgq_purge(&charger_resp_msgq); //purge any ongoing charger requests that weren't handled
-	k_msgq_purge(&imp_req_msgq);
-	k_msgq_purge(&imp_resp_msgq);	
+	err = k_sem_take(&medradio_req_resp, K_MSEC(1000)); //wait for access to shared resource
+	if (err){
+		LOG_INF("pmboot:ChargerResp MsgQs in use: %d", k_msgq_num_used_get(&charger_resp_msgq));
+		LOG_INF("pmboot:CmdResp MsgQs in use: %d", k_msgq_num_used_get(&cmd_resp_msgq));
+		LOG_INF("pmboot:ImpReq MsgQs in use: %d", k_msgq_num_used_get(&imp_req_msgq));
+		LOG_INF("pmboot:ImpResp MsgQs in use: %d", k_msgq_num_used_get(&imp_resp_msgq));
+		k_msgq_purge(&charger_resp_msgq); //purge any ongoing charger requests that weren't handled
+		k_msgq_purge(&imp_req_msgq);
+		k_msgq_purge(&imp_resp_msgq);	
+	}
 
 	LOG_HEXDUMP_INF(medRadio.buf, medRadio.len, "TX MedRadio Packet");
 	while(k_msgq_put(&imp_req_msgq, &medRadio, K_NO_WAIT) != 0)
@@ -2974,7 +2975,7 @@ uint8_t getAppRadioFromPMBoot(uint8_t* addrAP, uint8_t* addrPM, uint8_t* chan, u
 	}
 	//wait for a response
 	err = k_msgq_get(&charger_resp_msgq, &cmdHandler, K_MSEC(getTaskTimeoutForMedRadio())); 
-	unblockCmdHandlerMedRadioAccess();
+	k_sem_give(&medradio_req_resp); //release access to shared resource
 	
 	LOG_HEXDUMP_INF(cmdHandler.buf, cmdHandler.len, "CHARGER resp");
 	if(err == 0 && cmdHandler.len == (7 + NON_PAYLOAD_RESP_BYTES)  && cmdHandler.buf[NON_PAYLOAD_RESP_BYTES + 0] == 0x27)
@@ -3113,15 +3114,16 @@ int8_t transmit(uint8_t node, uint8_t* data, uint8_t len, uint8_t counter, uint8
 
 	medRadio.source = SOURCE_CHARGER;
 
-	blockCmdHandlerMedRadioAccess();
-
-	LOG_INF("transmit:ChargerResp MsgQs in use: %d", k_msgq_num_used_get(&charger_resp_msgq));
-	LOG_INF("transmit:CmdResp MsgQs in use: %d", k_msgq_num_used_get(&cmd_resp_msgq));
-	LOG_INF("transmit:ImpReq MsgQs in use: %d", k_msgq_num_used_get(&imp_req_msgq));
-	LOG_INF("transmit:ImpResp MsgQs in use: %d", k_msgq_num_used_get(&imp_resp_msgq));
-	k_msgq_purge(&charger_resp_msgq); //purge any ongoing charger requests that weren't handled
-	k_msgq_purge(&imp_req_msgq);
-	k_msgq_purge(&imp_resp_msgq);	
+	err = k_sem_take(&medradio_req_resp, K_MSEC(1000)); //wait for access to shared resource
+	if (err){
+		LOG_INF("transmit:ChargerResp MsgQs in use: %d", k_msgq_num_used_get(&charger_resp_msgq));
+		LOG_INF("transmit:CmdResp MsgQs in use: %d", k_msgq_num_used_get(&cmd_resp_msgq));
+		LOG_INF("transmit:ImpReq MsgQs in use: %d", k_msgq_num_used_get(&imp_req_msgq));
+		LOG_INF("transmit:ImpResp MsgQs in use: %d", k_msgq_num_used_get(&imp_resp_msgq));
+		k_msgq_purge(&charger_resp_msgq); //purge any ongoing charger requests that weren't handled
+		k_msgq_purge(&imp_req_msgq);
+		k_msgq_purge(&imp_resp_msgq);	
+	}
 
 	LOG_HEXDUMP_INF(medRadio.buf, medRadio.len, "TX MedRadio Packet");
 	while(k_msgq_put(&imp_req_msgq, &medRadio,  K_NO_WAIT) != 0)
@@ -3133,7 +3135,7 @@ int8_t transmit(uint8_t node, uint8_t* data, uint8_t len, uint8_t counter, uint8
 	}
 	//wait for a response
 	err = k_msgq_get(&charger_resp_msgq, &cmdHandler, K_MSEC(getTaskTimeoutForMedRadio()));  
-	unblockCmdHandlerMedRadioAccess();
+	k_sem_give(&medradio_req_resp); //release access to shared resource
 	if(err || cmdHandler.len < NON_PAYLOAD_RESP_BYTES + 2 )
 	{
 		return -1; //no valid response 
@@ -3162,18 +3164,5 @@ int8_t transmit(uint8_t node, uint8_t* data, uint8_t len, uint8_t counter, uint8
 
 }
 
-static bool isCmdHandlerBlocked = false;
-void blockCmdHandlerMedRadioAccess()
-{
-	isCmdHandlerBlocked = true;
-}
 
-void unblockCmdHandlerMedRadioAccess()
-{
-	isCmdHandlerBlocked = false;
-}
-bool isCmdHandlerMedRadioAccessBlocked()
-{
-	return isCmdHandlerBlocked;
-}
 
