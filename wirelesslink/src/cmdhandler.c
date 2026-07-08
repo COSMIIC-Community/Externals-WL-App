@@ -173,6 +173,7 @@ void command_handler_thread(void)
     uint8_t len, route;
     uint32_t result;
     uint8_t buf[8]; //temporary storage buffer
+    uint32_t timeout;
     
     int err;
 
@@ -1201,16 +1202,31 @@ void command_handler_thread(void)
             {
                 medRadio.source = SOURCE_CMDHANDLER;
                 LOG_HEXDUMP_INF(medRadio.buf, medRadio.len, "TX MedRadio Packet");
-                while(k_msgq_put(&imp_req_msgq, &medRadio, K_NO_WAIT) != 0)
+                while(isCmdHandlerMedRadioAccessBlocked())
                 {
-                    /* message queue is full: purge old data & try again */
-                    LOG_INF("Purging ImpReq MsgQ");
-                    k_msgq_purge(&imp_req_msgq);
+                    LOG_INF("cmdhandler waiting until Charger is done using MedRadio");
+                    k_msleep(10);
                 }
+                err = k_msgq_put(&imp_req_msgq, &medRadio, K_MSEC(1000)); //wait up to 1000ms for a previous request to complete
+                //the charger functionality takes priority in messages to PM over the command handler
+                if( err )
+                {       
+                    LOG_INF("cmdhandler MedRadio request could not be sent: Imp Req in use");
+                    break;
+                }
+                
+                timeout = getTaskTimeoutForMedRadio();
             }
-            //wait for response from Implant Req/Resp Thread or Coil Req/Resp Thread.  
-            //Since there is no timeout here, make sure the tasks expected to push the message do.
-            k_msgq_get(&cmd_resp_msgq, &cmdhandler, K_FOREVER);
+            else {
+                timeout = 1000; //ms,  TODO:assumes any non MedRadio comamnd completes within 1s 
+            }
+            //wait for response from Implant Req/Resp Thread or Coil Req/Resp Thread.             
+            err = k_msgq_get(&cmd_resp_msgq, &cmdhandler, K_MSEC(timeout));
+            if( err )
+	        {       
+                LOG_INF("No valid response on CmdResp MsgQ within %dms", timeout);
+                break;
+            }
 
             if(response_type == RESP_LOCAL_PMBOOT_WRITE || response_type == RESP_LOCAL_PMBOOT_READ || response_type == RESP_LOCAL_PMFILE_READ)
             {

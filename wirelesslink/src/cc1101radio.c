@@ -771,6 +771,8 @@ uint16_t getMedRadioTimeout( void )
 	return timeout;
 }
 
+
+
 /**********************************************************************************************************
 *                                             initRadioConfig()
 **********************************************************************************************************/
@@ -865,9 +867,12 @@ void loadRadioSettingsForPMBoot(void){
 	updateMedRadioRetries(5);
 }
 
-uint16_t getTaskTimeoutForMedRadio(void)
+uint32_t getTaskTimeoutForMedRadio(void)
 {
-	return (radio.worInterval + radio.rxTimeout + 2)*(radio.retries+1) + 2;
+	//the MedRadioTimeout only includes the waiting time from Pm request sent to PM response.  
+	//The calling task also needs to wait for the time to send the message, the WOR interval, and any repeats
+	//plus time for the OS 
+	return ((uint32_t) radio.worInterval + (uint32_t) getMedRadioTimeout() + 2 + 10)*((uint32_t)  radio.retries+1) + 10;
 }
 
 
@@ -963,7 +968,7 @@ void sendRadioPacket( const uint8_t *data, uint8_t dataLen )
 		else
 		{
 			startTx();	//Strobe and delay (for preamble)
-			k_msleep(radio.worInterval + 2); //pause 22ms
+			k_msleep(radio.worInterval + 2); //pause worInterval + 2ms
 			/* load Tx buffer */
 			writeRegisters( SFIFO, msg, dataLen + 2 );
 		}

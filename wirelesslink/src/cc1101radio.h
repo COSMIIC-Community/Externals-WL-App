@@ -50,7 +50,7 @@ uint8_t getRadioPacket( uint8_t *data );
 uint8_t clearChannelSearch(uint8_t dwell, int8_t* maxRSSI, int8_t* avgRSSI);
 void loadRadioSettingsFromFlash(void);
 void loadRadioSettingsForPMBoot(void);
-uint16_t getTaskTimeoutForMedRadio(void);
+uint32_t getTaskTimeoutForMedRadio(void);
 void idleMedRadio(void);
 void powerDownRadio(void);
 uint16_t getMedRadioTimeout( void );

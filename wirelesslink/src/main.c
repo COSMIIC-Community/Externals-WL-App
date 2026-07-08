@@ -1813,7 +1813,8 @@ void implant_reqresp_thread(void)
 		source = medRadio.source;
 		timeout = getMedRadioTimeout(); 
 		LOG_INF("Sending out MedRadio (Request Route %d) using Timeout: %d", source, timeout);
-		k_msgq_purge(&imp_resp_msgq); //purge any incoming messages responses prior to sending new request
+		LOG_INF("main:ImpResp MsgQs in use: %d", k_msgq_num_used_get(&imp_resp_msgq));
+		//k_msgq_purge(&imp_resp_msgq); //purge any incoming messages responses prior to sending new request
 		sendRadioPacket(bufPtr, medRadio.len);  
 		medRadio.len = 0;
 		/* Wait (not indefinitely) for message to be sent to implant*/
@@ -1823,11 +1824,15 @@ void implant_reqresp_thread(void)
 			/* Wait (not indefinitely) for response from implant*/
 			err = k_msgq_get(&imp_resp_msgq, &medRadio, K_MSEC(timeout));
 		}
+		else
+		{
+			LOG_INF("MedRadio TX Timeout src%d", source);
+		}
 				
 		if (err!=0 || medRadio.len < 2 ){ 
 			if(modeLED & RED_LED_RADIO_ERROR){dk_set_led_on(RED_LED); }
 			//JML TODO: send an appropriate timeout response)
-			LOG_INF("MedRadio Timeout");
+			LOG_INF("MedRadio RX Timeout src%d", source);
 			idleMedRadio();
 
 			cmdHandler.len = NON_PAYLOAD_RESP_BYTES;
