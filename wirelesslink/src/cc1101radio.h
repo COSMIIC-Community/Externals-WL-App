@@ -54,6 +54,7 @@ uint32_t getTaskTimeoutForMedRadio(void);
 void idleMedRadio(void);
 void powerDownRadio(void);
 uint16_t getMedRadioTimeout( void );
+uint8_t getMedRadioRetries( void );
 void copyRadioSettings(uint8_t* buf);
 bool updateMedRadioLocalAddress(uint8_t val);
 bool updateMedRadioRemoteAddress(uint8_t val);

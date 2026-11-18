@@ -19,7 +19,7 @@
 		zephyr,ieee802154 = &ieee802154;
 	};
 
-	
+
 	//gpios = <&gpio1 4 GPIO_ACTIVE_HIGH>;
 
 	leds {
@@ -53,7 +53,7 @@
 			pwms = <&pwm0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
 			status = "okay";
 		};
-		
+
 		pwm_led1: pwm_led_1 {
             pwms = <&pwm1 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
             status = "okay";
@@ -76,7 +76,7 @@
 		};
 	};
 
-	
+
 
 	// gpio_fwd: nrf-gpio-forwarder {
 	// 	compatible = "nordic,nrf-gpio-forwarder";
@@ -206,7 +206,7 @@
 		spi-max-frequency = <4000000>;
 		label = "medradio";
 	};
-	
+
 };
 
 
@@ -229,7 +229,7 @@
             };
             spi-max-frequency = <24000000>;
     };
-   
+
 };
 
 &i2c2{
@@ -238,7 +238,7 @@
 	pinctrl-0 = <&i2c2_default>;
 	pinctrl-1 = <&i2c2_sleep>;
 	pinctrl-names = "default", "sleep";
-    clock-frequency = <100000>;  //NHD-Display only supports 50KHz
+    clock-frequency = <400000>;  //NHD-Display
     ism330is:ism330is@6A{
         status = "okay";
          compatible = "i2c-device"; //generic, no driver used
@@ -249,37 +249,37 @@
     //The following are only used for the WL within the charger:
     lcddisplay:lcddisplay@3c{
         status="okay";
-        compatible = "i2c-device"; //generic, no driver used
+        compatible = "i2c-device"; //generic, no driver used. 400kHz max per datasheet
         reg = <0x3c>;
         label = "LCDDisplay-NHD-0420";
     };
     ertc:ertc@68{
         status="okay";
-        compatible = "i2c-device"; //generic, no driver used
+        compatible = "i2c-device"; //generic, no driver used. 400kHz max per datasheet
         reg = <0x68>;
         label = "RTC-DS3231";
     };
     dcdc:dcdc@74{
         status="okay";
-        compatible = "i2c-device"; //generic, no driver used
+        compatible = "i2c-device"; //generic, no driver used. 1Mhz max per datasheet
         reg = <0x74>;
         label = "DCDC-TPS55289";
     };
     adctherm:adctherm@48{
         status="okay";
-        compatible = "i2c-device"; //generic, no driver used
+        compatible = "i2c-device"; //generic, no driver used. 3.4Mhz max per datasheet
         reg = <0x48>;
         label = "ADC-Thermistor-ADS1110";
     };
     syspower:syspower@41{
         status="okay";
-        compatible = "i2c-device"; //generic, no driver used
+        compatible = "i2c-device"; //generic, no driver used. 2.94Mhz max per datasheet
         reg = <0x41>;
         label = "SysPowerSupplyMonitor-INA236A";
     };
     cdpower:cdpower@40{
         status="okay";
-        compatible = "i2c-device"; //generic, no driver used
+        compatible = "i2c-device"; //generic, no driver used. 2.94Mhz max per datasheet
         reg = <0x40>;
         label = "CDPowerSupplyMonitor-INA236A";
     };

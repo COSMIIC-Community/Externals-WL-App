@@ -116,6 +116,7 @@ static const struct i2c_dt_spec dev_i2c_cdpwr = I2C_DT_SPEC_GET(DT_NODELABEL(cdp
 //Watchdog
 static const struct device *const wdt = DEVICE_DT_GET(DT_NODELABEL(wdt0));
 static int wdt_channel_id;
+static bool sd_card_ready = false;
 
 //Messaeg Queues
 K_MSGQ_DEFINE(coil_req_msgq, sizeof(struct smartCoil_type), MSG_DEPTH, 4);
@@ -914,6 +915,8 @@ bool OutputDisplayLine(uint8_t line, char* str, uint8_t len)
 #define CG_BLANK 	0b00100000 
 #define CG_MUSIC    0b10010000 
 #define CG_TRIANGLE 0b00010000 
+#define CG_SOLIDDIAMOND  0b10010100
+#define CG_EMPTYDIAMOND  0b11001111
 
 static uint8_t customCharCharge[8][8] = {CUSTOMCHAR_RADIO0, 
 						   CUSTOMCHAR_BATTERY0,
@@ -947,7 +950,7 @@ static const uint8_t customCharBattery[7][8] = {CUSTOMCHAR_BATTERY0,
 										CUSTOMCHAR_BATTERY5,
 										CUSTOMCHAR_BATTERY6 };																			
 
-										#define BAT_MIN 2400
+#define BAT_MIN 1
 #define BAT_MAX 4300
 //returns true if ignoring battery volatges that are invalid when calculating average.  
 bool getBatteryAverages(uint16_t *vAvg, int16_t *iAvg, uint16_t v1, uint16_t v2, uint16_t v3, int16_t i1, int16_t i2, int16_t i3)
@@ -1034,7 +1037,7 @@ void initDisplay(void)
 {
  // NHD-0420CW-AB3
 //JML WORKAROUND for lower I2C rate
-	((NRF_TWIM_Type *) NRF_TWIM2)->FREQUENCY = 0x00CCCCCCUL; // 50000 * 2^32 / 16000000
+//	((NRF_TWIM_Type *) NRF_TWIM2)->FREQUENCY = 0x00CCCCCCUL; // 50000 * 2^32 / 16000000
 
 	k_msleep(1); //wait at least 10us
 	enableDisplay(1);
@@ -1120,6 +1123,7 @@ void charger_thread(void)
 
 	char chardayofweek1[7]	= {'S', 'M', 'T', 'W', 'T', 'F', 'S'};
 	char chardayofweek2[7]	= {'u', 'o', 'u', 'e', 'h', 'r', 'a'};
+	char charSdCard = CG_EMPTYDIAMOND; 
 
 	if (!device_is_ready(wdt)) {
 		printk("Watchdog device not ready.\n");
@@ -1139,6 +1143,7 @@ void charger_thread(void)
 	initDisplay();  //also confirms that I2C bus is available and ready
 	initDCDC();
 	initSD();
+
 	//uint8_t buf[6];
 	if(saved_settings_read(COIL_SETTINGS_ID, &chargerParams, sizeof(chargerParams)) > 0)
 	{
@@ -1170,18 +1175,32 @@ void charger_thread(void)
 		//the sleep time should be < 1s such that button presses likely trigger a change do not have a 
 		//long latency before change takes effect
 
+
+			
 		if(chargerMode == CHARGER_MODE_CLOCK)
 		{
+			if (!sd_card_ready)
+			{
+				OutputDisplay(1, "","    Attempting to   ","   detect SD Card   ","",0,20,20,0 );
+				initSD(); //try again when entering mode if card was hot-swapped
+			}
+			
+			if (sd_card_ready)
+			{
+				charSdCard = CG_SOLIDDIAMOND;
+			} else {
+				charSdCard = CG_EMPTYDIAMOND;
+			}
 			setMenuIcons();
 
 			if(modeLED & LED_CHARGER) setLEDs(0,0,0);
 			sprintf(str,"  %1c       %1c%1c     %1c  "\
 						"  %1c    COSM%1cC    %1c  "\
-						" Smart Charger v%03d "\
+						" SmartCharger v%03d%1c "\
 						"                    ",
 						CG_LIGHTNING, CG_BIGSTAR, CG_LILSTAR, CG_MUSIC,
 						CG_POWER, CG_DOUBLEI, CG_TUNER,
-						 SW_REV );
+						 SW_REV,charSdCard);
 			OutputDisplay(1, str,"","","",80,0,0,0 );
 
 			while(chargerMode == CHARGER_MODE_CLOCK)
@@ -1314,49 +1333,63 @@ void charger_thread(void)
 
 }
 
+
 void initSD(void)
 {
 	int res;
-	/* raw disk i/o */
-	do {
-		static const char *disk_pdrv = DISK_DRIVE_NAME;
-		uint64_t memory_size_mb;
-		uint32_t block_count;
-		uint32_t block_size;
-
-		if (disk_access_init(disk_pdrv) != 0) {
-			LOG_ERR("Storage init ERROR!");
-			break;
-		}
-
-		if (disk_access_ioctl(disk_pdrv,
-				DISK_IOCTL_GET_SECTOR_COUNT, &block_count)) {
-			LOG_ERR("Unable to get sector count");
-			break;
-		}
-		LOG_INF("Block count %u", block_count);
-
-		if (disk_access_ioctl(disk_pdrv,
-				DISK_IOCTL_GET_SECTOR_SIZE, &block_size)) {
-			LOG_ERR("Unable to get sector size");
-			break;
-		}
-		LOG_INF("Sector size %u\n", block_size);
-
-		memory_size_mb = (uint64_t)block_count * block_size;
-		LOG_INF("Memory Size(MB) %u\n", (uint32_t)(memory_size_mb >> 20));
-	} while (0);
+	static const char *disk_pdrv = DISK_DRIVE_NAME;
+	uint64_t memory_size_mb;
+	uint32_t block_count;
+	uint32_t block_size;
 
 	mp.mnt_point = disk_mount_pt;
 
-	res = fs_unmount(&mp);
+	res = fs_unmount(&mp);    
 	LOG_INF("Disk unmounted %d", res);
+
+	if(disk_access_ioctl(disk_pdrv, DISK_IOCTL_CTRL_DEINIT, NULL) !=0){
+		LOG_ERR("Storage deinit ERROR!");
+		//don't return because on first try this won't do anything
+	}
+
+	//k_msleep(100); //JML determine if necessary
+	if(disk_access_ioctl(disk_pdrv, DISK_IOCTL_CTRL_INIT, NULL) !=0){
+		LOG_ERR("Storage init ERROR!");
+		return;
+	}
+
+	// /* raw disk i/o */
+	// if (disk_access_init(disk_pdrv) != 0) {
+	// 	LOG_ERR("Storage init ERROR!");
+	// 	return;
+	// }
+
+	if (disk_access_ioctl(disk_pdrv,
+			DISK_IOCTL_GET_SECTOR_COUNT, &block_count)) {
+		LOG_ERR("Unable to get sector count");
+		return;
+	}
+	LOG_INF("Block count %u", block_count);
+
+	if (disk_access_ioctl(disk_pdrv,
+			DISK_IOCTL_GET_SECTOR_SIZE, &block_size)) {
+		LOG_ERR("Unable to get sector size");
+		return;
+	}
+	LOG_INF("Sector size %u\n", block_size);
+
+	memory_size_mb = (uint64_t)block_count * block_size;
+	LOG_INF("Memory Size(MB) %u\n", (uint32_t)(memory_size_mb >> 20));
+	
+
+
 
 	res = fs_mount(&mp);
 	
 	if (res == FR_OK) {
 		LOG_INF("Disk mounted.\n");
 			lsdir(disk_mount_pt); 
+			sd_card_ready = true;
 
 		} else {
 		LOG_INF("Error mounting disk.\n");
@@ -1888,9 +1921,12 @@ void setChargerParams(uint8_t* params)
 #define DISPLAY_NO_FEEDBACK 8
 
 
-
-#define TIME_CYLCE_LED_ON  250
-#define TIME_CYLCE_LED_OFF 250
+//The TIME_CYCLE_LED_ON + TIME_CYCLE_LED_OFF defines the minimum time between updates during charge
+//The actual on-time may be significantly higher if the radio times out, particularly if a long timeout, WOR interval, or multiple retries are implemented
+//The actual off-time is accurate
+//Currently set to 0.5s per update
+#define TIME_CYCLE_LED_ON  250 //takes at least 75ms (coil thermistor) + ~28ms (time to send radio message with 20ms WOR) + ~23ms time to update display = 126ms  
+#define TIME_CYCLE_LED_OFF 250
 
 //action 
 
@@ -1989,6 +2025,7 @@ void charge(void)
 	char charWarnPMTemp;
 	char charWarnCoupling;
 	char charWarnCoilV;
+	char charSdCard = CG_EMPTYDIAMOND;
 	char charBatErr = CG_BLANK;
 	uint8_t target = 0xFF; 
 	uint8_t disptarg = 0;
@@ -2017,7 +2054,7 @@ void charge(void)
 	uint16_t currentCD = 0, voltageCD = 0, currentSys = 0, voltageSys = 0,tempCD = 0;
 
 	uint8_t chargingError = CHARGING_ERROR_NONE;
-	bool fullUpdate = false;
+	bool fullupdate = false;
 	
 	
 	struct audioList_type audioList;
@@ -2111,7 +2148,7 @@ void charge(void)
 				break;
 			}
 			
-			if(fullUpdate) {
+			if(fullupdate) {
 				if(voltageCD > MAX_COIL_VOLTAGE)
 				{
 					chargingError = CHARGING_ERROR_CDVOLTAGE;
@@ -2135,7 +2172,7 @@ void charge(void)
 		}
 
 		//Get Coil temperature
-		tempCD = getThermistor();
+		tempCD = getThermistor(); //takes >75ms
 		if(tempCD > COIL_OPEN_TEMP)
 		{
 			//valid temperature
@@ -2375,7 +2412,7 @@ void charge(void)
 					{
 						displayMode = DISPLAY_RADIO_WARN;
 					}
-					else if (fullUpdate)
+					else if (fullupdate)
 					{
 						//leave screen with stagnant PM data and updated Coil data
 						//JML: warning triangles are currently missing, because they are cleared each cycle
@@ -2385,7 +2422,7 @@ void charge(void)
 				else
 				{
 					radioIndicator = 1;
-					fullUpdate = true;
+					fullupdate = true;
 					
 					vrec   = (uint16_t) resp[ 0] + (((uint16_t) resp[ 1])<<8);
 					tempPM = (uint16_t) resp[ 2] + (((uint16_t) resp[ 3])<<8);
@@ -2400,7 +2437,7 @@ void charge(void)
 					cmd    = resp[20];
 
 
-					n=sprintf(logStr, "%02X/%02X/%02X %02X:%02X:%02X %8d COIL T%3d V%4d I%4d PM T%3d V%3d BV%4d %4d %4d BI%4d %4d %4d %3d/%3d\n", 
+					n=sprintf(logStr, "%02X/%02X/%02X %02X:%02X:%02X %8d COIL T%3d V%4d I%4d PM T%3d V%3d BV%5d %5d %5d BI%4d %4d %4d %3d/%3d\n", 
 							rtc[5], /*month*/
 							rtc[4], /*date*/
 							rtc[6], /*year*/
@@ -2414,7 +2451,15 @@ void charge(void)
 
 
 
-					logToFile(logStr, n);
+					if(sd_card_ready && logToFile(logStr, n))
+					{
+						charSdCard = CG_SOLIDDIAMOND;
+						sd_card_ready = true;
+					}
+					else {
+						charSdCard = CG_EMPTYDIAMOND; 
+						sd_card_ready = false;
+					}
 
 
 					//Confirm Test value (counter) is changing
@@ -2695,10 +2740,10 @@ void charge(void)
 					setIconRSSI(radioIndicator);
 					setIconVoltage(BavgV);
 					sprintf(&str[20], "%1c %1c%2d.%1d%1c            "\
-								 	"%1c %1c%2d.%1dV  %3d/%3d   "\
+								 	"%1c %1c%2d.%1dV  %3d/%3d  %1c"\
 								 	"%1c  %4dmV%1c %4dmA  %1c", 
 							CG_PERSON, charWarnPMTemp, tempPM/10, tempPM%10, CG_DEGREEC, 
-							CG_LIGHTNING, charWarnCoupling,vrec/10, vrec%10, cmd, disptarg,
+							CG_LIGHTNING, charWarnCoupling,vrec/10, vrec%10, cmd, disptarg,charSdCard,
 							CG_BATTERY, BavgV, charBatErr, BavgI/10, CG_RADIO);
 					// sprintf(str, "coil: %1c%2d.%1dC  %1c%1d.%02dVimpl: %1c%2d.%1dC   %1d.%02dAVrec: %1c%2d.%1dV %3d/%3dBatt: %4dmV%4d.%1dmA", 
 					// 	charWarnCoilTemp, tempCD/10, tempCD%10, charWarnCoilV, voltageCD/1000, (voltageCD%1000)/10,
@@ -2719,14 +2764,14 @@ void charge(void)
 
 		delayCycle = (uint16_t) (k_uptime_get() - timeCycle);
 		LOG_INF("DelayCycle: %dms", delayCycle);
-		if(delayCycle < TIME_CYLCE_LED_ON)
+		if(delayCycle < TIME_CYCLE_LED_ON)
 		{
-			k_msleep(TIME_CYLCE_LED_ON - delayCycle);
+			k_msleep(TIME_CYCLE_LED_ON - delayCycle);
 		}
 		if(modeLED & LED_CHARGER) setLEDs(2,0,2);  //turn off green LED so it blinks
-		k_msleep(TIME_CYLCE_LED_OFF);
+		k_msleep(TIME_CYCLE_LED_OFF);
 
-		if (displayMode == DISPLAY_SERIAL_REV || DISPLAY_BOOT_RADIO_MISMATCH)
+		if (displayMode == DISPLAY_SERIAL_REV || displayMode == DISPLAY_BOOT_RADIO_MISMATCH)
 		{
 			k_msleep(500); //delay an extra 0.5s to make reading screen easier
 		}

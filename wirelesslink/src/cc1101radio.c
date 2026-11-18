@@ -746,6 +746,11 @@ void copyRadioSettings(uint8_t* buf)
 	LOG_HEXDUMP_INF(buf, 7, "Radio Settings");
 }
 
+uint8_t getMedRadioRetries( void )
+{
+	return radio.retries;
+}
+
 uint16_t getMedRadioTimeout( void )
 {
 	uint16_t timeout;
@@ -878,6 +883,8 @@ uint32_t getTaskTimeoutForMedRadio(void)
 	//plus time for the OS 
 	return ((uint32_t) radio.worInterval + (uint32_t) getMedRadioTimeout() + 2 + 10)*((uint32_t)  radio.retries+1) + 10;
 }
+
+
 
 
 

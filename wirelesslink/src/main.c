@@ -1610,7 +1610,7 @@ int main(void)
 
 	wl_startup(); //do after init_adc, and before ble start advertising
 
-	ble_start_advertising();
+	//ble_start_advertising();
 	
 	for (uint8_t i=0; i<MAX_ACTIONS; i++){ 
 		err = saved_settings_read(ACTION_SETTINGS_ID+i, &action[i], sizeof(action[i]));
@@ -1785,19 +1785,21 @@ void implant_reqresp_thread(void)
 
 	LOG_INF("Starting implant request-response thread");
 
-	struct medRadio_type medRadio; 
-	const uint8_t *bufPtr = &medRadio.buf;
+	struct medRadio_type medRadioTX; 
+	struct medRadio_type medRadioRX; 
+	const uint8_t *bufPtr = &medRadioTX.buf;
 	struct cmdHandler_type cmdHandler; 
 	uint16_t timeout;
 	uint8_t source = 0;
 	uint8_t response_len, response_type;
 	int err = 0;
+	uint8_t trycnt;
 
 	for (;;) {
 		response_len = 0, response_type = 0;
 
 		/* Wait indefinitely for request coming from BLE or UART or locally */
-		err = k_msgq_get(&imp_req_msgq, &medRadio, K_MSEC(100)); //wait up to 100ms, then turn off LEDs
+		err = k_msgq_get(&imp_req_msgq, &medRadioTX, K_MSEC(100)); //wait up to 100ms, then turn off LEDs
 		if(modeLED & RED_LED_RADIO_ERROR){dk_set_led_off(RED_LED); }
 			
 		if(modeLED & GREEN_LED_RADIO_RESPONSE){dk_set_led_off(GREEN_LED); }
@@ -1807,52 +1809,63 @@ void implant_reqresp_thread(void)
 			dk_set_led_off(BLUE_LED); //turn off blue so green and red look correct
 		}
 		if (err < 0){  //If no message, wait indefinitely
-			k_msgq_get(&imp_req_msgq, &medRadio, K_FOREVER);
+			k_msgq_get(&imp_req_msgq, &medRadioTX, K_FOREVER);
 		}
 
-		source = medRadio.source;
+		source = medRadioTX.source;
 		timeout = getMedRadioTimeout(); 
-		LOG_INF("Sending out MedRadio (Request Route %d) using Timeout: %d", source, timeout);
-		if(k_msgq_num_used_get(&imp_resp_msgq))
-		{
-			LOG_INF("Purging outstanding MedRadio response before sending new request");
-			k_msgq_purge(&imp_resp_msgq); //purge any incoming messages responses prior to sending new request
-		}
-		sendRadioPacket(bufPtr, medRadio.len);  
-		medRadio.len = 0;
-		/* Wait (not indefinitely) for message to be sent to implant*/
-		err = k_sem_take(&medradio_sent, K_MSEC(timeout)); //JML should this be a shorter timeout
-		if (err == 0)
-		{
-			/* Wait (not indefinitely) for response from implant*/
-			err = k_msgq_get(&imp_resp_msgq, &medRadio, K_MSEC(timeout));
-		}
-		else
-		{
-			LOG_INF("MedRadio TX Timeout src%d", source);
-		}
-				
-		if (err!=0 || medRadio.len < 2 ){ 
-			if(modeLED & RED_LED_RADIO_ERROR){dk_set_led_on(RED_LED); }
-			//JML TODO: send an appropriate timeout response)
-			LOG_INF("MedRadio RX Timeout src%d", source);
-			idleMedRadio();
-
-			cmdHandler.len = NON_PAYLOAD_RESP_BYTES;
-			cmdHandler.buf[INDEX_RESP_SYNC ] = SYNC_BYTE;
-			cmdHandler.buf[INDEX_RESP_TYPE] = RESP_MEDRADIO_TIMEOUT;
-			cmdHandler.buf[INDEX_RESP_LEN] = cmdHandler.len;
-		} else {
-			if(modeLED & GREEN_LED_RADIO_RESPONSE){ dk_set_led_on(GREEN_LED); }
-			LOG_INF("MedRadio Receive back in Implant thread, len=%d", medRadio.len);
-			LOG_HEXDUMP_INF(medRadio.buf, medRadio.len, "Response");
-			//scrap addr, len bytes from radio msg, maintain RSSI,LQI
-			cmdHandler.len = medRadio.len + NON_PAYLOAD_RESP_BYTES - 2; 
-			cmdHandler.buf[INDEX_RESP_SYNC ] = SYNC_BYTE;
-			cmdHandler.buf[INDEX_RESP_TYPE] = RESP_SUCCESS;
-			cmdHandler.buf[INDEX_RESP_LEN] = cmdHandler.len;
-			memcpy(&cmdHandler.buf[INDEX_RESP_PAYLOAD], &medRadio.buf[2], medRadio.len-2);
-		}
+		trycnt = 0;
+		for(;;) {
+			if (trycnt == 0){
+				LOG_INF("Sending out MedRadio (Request Route %d) using Timeout: %d", source, timeout);
+			} else {
+				LOG_INF("Retry #%d:Sending out MedRadio (Request Route %d) using Timeout: %d", trycnt, source, timeout);
+			}
+			if(k_msgq_num_used_get(&imp_resp_msgq))
+			{
+				LOG_INF("Purging outstanding MedRadio response before sending new request");
+				k_msgq_purge(&imp_resp_msgq); //purge any incoming messages responses prior to sending new request
+			}
+			sendRadioPacket(bufPtr, medRadioTX.len);  
+			medRadioRX.len = 0;
+			/* Wait (not indefinitely) for message to be sent to implant*/
+			err = k_sem_take(&medradio_sent, K_MSEC(timeout)); //JML should this be a shorter timeout
+			if (err == 0)
+			{
+				/* Wait (not indefinitely) for response from implant*/
+				err = k_msgq_get(&imp_resp_msgq, &medRadioRX, K_MSEC(timeout));
+			}
+			else
+			{
+				LOG_INF("MedRadio TX Timeout src%d", source);
+			}
+					
+			if (err!=0 || medRadioRX.len < 2 ){ 
+				LOG_INF("MedRadio RX Timeout src%d", source);
+				idleMedRadio();
+				if (++trycnt > getMedRadioRetries()){
+					if(modeLED & RED_LED_RADIO_ERROR){dk_set_led_on(RED_LED); }
+					cmdHandler.len = NON_PAYLOAD_RESP_BYTES;
+					cmdHandler.buf[INDEX_RESP_SYNC ] = SYNC_BYTE;
+					cmdHandler.buf[INDEX_RESP_TYPE] = RESP_MEDRADIO_TIMEOUT;
+					cmdHandler.buf[INDEX_RESP_LEN] = cmdHandler.len;
+					break; //break from retry loop
+				} else { 
+					//try sending MedRadio message out before sending response to caller
+				}
+			} else {
+				if(modeLED & GREEN_LED_RADIO_RESPONSE){ dk_set_led_on(GREEN_LED); }
+				LOG_INF("MedRadio Receive back in Implant thread, len=%d", medRadioRX.len);
+				LOG_HEXDUMP_INF(medRadioRX.buf, medRadioRX.len, "Response");
+				//scrap addr, len bytes from radio msg, maintain RSSI,LQI
+				cmdHandler.len = medRadioRX.len + NON_PAYLOAD_RESP_BYTES - 2; 
+				cmdHandler.buf[INDEX_RESP_SYNC ] = SYNC_BYTE;
+				cmdHandler.buf[INDEX_RESP_TYPE] = RESP_SUCCESS;
+				cmdHandler.buf[INDEX_RESP_LEN] = cmdHandler.len;
+				memcpy(&cmdHandler.buf[INDEX_RESP_PAYLOAD], &medRadioRX.buf[2], medRadioRX.len-2);
+				break; //break from retry loop
+			}
+		} 
 
 		switch(source){
 			case SOURCE_CMDHANDLER:
@@ -1877,6 +1890,7 @@ void implant_reqresp_thread(void)
 				LOG_INF("Undefined Source");
 
 		}
+		
 		
 		
 
